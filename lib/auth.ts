@@ -3,10 +3,21 @@ import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 import type { AuthResponse } from './types';
 
-// Get credentials from environment variables
-const AUTH_USERNAME = process.env.AUTH_USERNAME || 'omrajpal';
-const AUTH_PASSWORD = process.env.AUTH_PASSWORD || '@omisBOSS131313';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// Get credentials from environment variables — fail fast if missing in production
+const AUTH_USERNAME = process.env.AUTH_USERNAME;
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!AUTH_USERNAME || !AUTH_PASSWORD || !JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_USERNAME, AUTH_PASSWORD, and JWT_SECRET must be set in production');
+  }
+  console.warn('Warning: AUTH_USERNAME, AUTH_PASSWORD, or JWT_SECRET not set. Using development defaults.');
+}
+
+const EFFECTIVE_USERNAME = AUTH_USERNAME || 'admin';
+const EFFECTIVE_PASSWORD = AUTH_PASSWORD || 'admin';
+const EFFECTIVE_SECRET = JWT_SECRET || 'dev-only-secret-do-not-use-in-prod';
 const JWT_EXPIRES_IN = '7d';
 
 export interface AuthUser {
@@ -21,7 +32,7 @@ export interface AuthUser {
 export async function authenticateUser(username: string, password: string): Promise<AuthResponse> {
   try {
     // Check username and password against environment variables
-    if (username.toLowerCase() !== AUTH_USERNAME.toLowerCase() || password !== AUTH_PASSWORD) {
+    if (username.toLowerCase() !== EFFECTIVE_USERNAME.toLowerCase() || password !== EFFECTIVE_PASSWORD) {
       return {
         success: false,
         message: 'Invalid credentials',
@@ -32,10 +43,10 @@ export async function authenticateUser(username: string, password: string): Prom
     const token = jwt.sign(
       {
         userId: '1',
-        email: AUTH_USERNAME,
+        email: EFFECTIVE_USERNAME,
         name: 'Om Rajpal',
       },
-      JWT_SECRET,
+      EFFECTIVE_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -46,7 +57,7 @@ export async function authenticateUser(username: string, password: string): Prom
       user: {
         id: '1',
         name: 'Om Rajpal',
-        email: AUTH_USERNAME,
+        email: EFFECTIVE_USERNAME,
       },
     };
   } catch (error) {
@@ -63,7 +74,7 @@ export async function authenticateUser(username: string, password: string): Prom
  */
 export function verifyToken(token: string): { valid: boolean; user?: AuthUser } {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
+    const decoded = jwt.verify(token, EFFECTIVE_SECRET) as AuthUser;
     return { valid: true, user: decoded };
   } catch (error) {
     return { valid: false };
@@ -74,7 +85,7 @@ export function verifyToken(token: string): { valid: boolean; user?: AuthUser } 
  * Generate a new JWT token
  */
 export function generateToken(userId: string, email: string, name: string): string {
-  return jwt.sign({ userId, email, name }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign({ userId, email, name }, EFFECTIVE_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
 /**
@@ -89,7 +100,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       return null;
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
+    const decoded = jwt.verify(token, EFFECTIVE_SECRET) as AuthUser;
     return decoded;
   } catch (error) {
     return null;

@@ -136,22 +136,18 @@ export function SyncButtonCompact({
   const handleSync = async () => {
     setIsSyncing(true)
 
-    const syncPromise = async () => {
-      if (onSync) {
-        await onSync()
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-      }
-    }
+    const promise = onSync
+      ? onSync()
+      : new Promise((resolve) => setTimeout(resolve, 2000))
 
-    toast.promise(syncPromise(), {
+    toast.promise(promise, {
       loading: "Syncing with Google Sheets...",
       success: "Transactions updated successfully",
       error: "Failed to sync. Please try again.",
     })
 
     try {
-      await syncPromise()
+      await promise
     } finally {
       setIsSyncing(false)
     }

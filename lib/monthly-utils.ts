@@ -383,9 +383,10 @@ export function calculateMonthlyMetrics(
     ? (netChange / Math.abs(openingBalance)) * 100
     : 0;
 
-  const savingsRate = totalIncome !== 0
+  const rawSavingsRate = totalIncome !== 0
     ? (netSavings / totalIncome) * 100
     : 0;
+  const savingsRate = Math.max(-100, Math.min(100, rawSavingsRate));
 
   // Period information
   let startDate: Date;

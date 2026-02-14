@@ -38,8 +38,11 @@ export function NavUser({
   const { isMobile } = useSidebar()
   const router = useRouter()
 
-  const handleLogout = () => {
-    localStorage.removeItem("auth_token")
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" })
+    } catch {}
+    localStorage.removeItem("auth-token")
     router.push("/login")
   }
 

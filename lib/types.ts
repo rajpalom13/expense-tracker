@@ -111,6 +111,8 @@ export enum PaymentMethod {
   DEBIT_CARD = 'Debit Card',
   CREDIT_CARD = 'Credit Card',
   UPI = 'UPI',
+  NEFT = 'NEFT',
+  IMPS = 'IMPS',
   NET_BANKING = 'Net Banking',
   WALLET = 'Wallet',
   CHEQUE = 'Cheque',
@@ -539,4 +541,139 @@ export interface InvestmentProjectionData {
     invested: number;
     projected: number;
   }[];
+}
+
+// ============================================================================
+// Needs/Wants/Investments (NWI) Classification
+// ============================================================================
+
+export type NWIBucketType = 'needs' | 'wants' | 'investments';
+
+export interface NWIConfig {
+  userId: string;
+  needs: { percentage: number; categories: TransactionCategory[] };
+  wants: { percentage: number; categories: TransactionCategory[] };
+  investments: { percentage: number; categories: TransactionCategory[] };
+  updatedAt?: string;
+}
+
+export interface NWIBucket {
+  label: string;
+  targetPercentage: number;
+  actualPercentage: number;
+  targetAmount: number;
+  actualAmount: number;
+  difference: number;
+  categoryBreakdown: CategoryBreakdown[];
+}
+
+export interface NWISplit {
+  totalIncome: number;
+  needs: NWIBucket;
+  wants: NWIBucket;
+  investments: NWIBucket;
+}
+
+// ============================================================================
+// Financial Health Metrics
+// ============================================================================
+
+export interface FinancialHealthMetrics {
+  emergencyFundMonths: number;
+  emergencyFundTarget: number; // 6
+  expenseVelocity: ExpenseVelocity;
+  financialFreedomScore: number;
+  scoreBreakdown: {
+    savingsRate: number;
+    emergencyFund: number;
+    nwiAdherence: number;
+    investmentRate: number;
+  };
+  netWorthTimeline: NetWorthPoint[];
+  incomeProfile: IncomeProfile;
+}
+
+export interface ExpenseVelocity {
+  currentMonthlyAvg: number;
+  previousMonthlyAvg: number;
+  changePercent: number;
+  trend: 'increasing' | 'decreasing' | 'stable';
+}
+
+export interface NetWorthPoint {
+  month: string;
+  bankBalance: number;
+  investmentValue: number;
+  totalNetWorth: number;
+}
+
+export interface IncomeProfile {
+  avgMonthlyIncome: number;
+  incomeStability: number; // 0-1 coefficient of variation inverse
+  isVariable: boolean;
+  lastIncomeDate: string | null;
+}
+
+// ============================================================================
+// Growth Projections & FIRE Calculator
+// ============================================================================
+
+export interface FIRECalculation {
+  fireNumber: number;
+  annualExpenses: number;
+  currentNetWorth: number;
+  progressPercent: number;
+  yearsToFIRE: number;
+  monthlyRequired: number;
+  projectionData: { year: number; netWorth: number; fireTarget: number }[];
+}
+
+export interface GrowthProjection {
+  sipProjections: {
+    name: string;
+    current: number;
+    projected3y: number;
+    projected5y: number;
+    projected10y: number;
+  }[];
+  emergencyFundProgress: {
+    currentMonths: number;
+    targetMonths: number;
+    monthsToTarget: number;
+  };
+  netWorthProjection: { year: number; invested: number; projected: number }[];
+  fire: FIRECalculation;
+  portfolioProjection: {
+    year: number;
+    stocks: number;
+    mutualFunds: number;
+    sips: number;
+    total: number;
+  }[];
+}
+
+// ============================================================================
+// Savings Goals
+// ============================================================================
+
+export interface SavingsGoalConfig {
+  id: string;
+  userId: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: string; // ISO date
+  monthlyContribution: number;
+  autoTrack: boolean;
+  category?: string; // "Emergency Fund", "Car", "Vacation", etc.
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsGoalProgress extends SavingsGoalConfig {
+  percentageComplete: number;
+  onTrack: boolean;
+  requiredMonthly: number;
+  projectedCompletionDate: string | null;
+  monthsRemaining: number;
 }

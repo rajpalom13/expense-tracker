@@ -67,6 +67,7 @@ export {
   getTopExpenseCategories,
   getTopMerchants,
   calculateIncomeVsExpense,
+  separateOneTimeExpenses,
 } from './analytics';
 
 export {

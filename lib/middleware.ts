@@ -79,3 +79,35 @@ export function handleOptions(): NextResponse {
 export function isValidObjectId(id: string): boolean {
   return /^[0-9a-fA-F]{24}$/.test(id);
 }
+
+/**
+ * Middleware for cron routes: validates CRON_SECRET header.
+ * Vercel cron jobs send the secret via the Authorization header as "Bearer <secret>".
+ * We also accept a custom "x-cron-secret" header for manual triggers.
+ */
+export function withCronAuth(
+  handler: (request: NextRequest) => Promise<NextResponse>
+) {
+  return async (request: NextRequest): Promise<NextResponse> => {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+      return NextResponse.json(
+        { success: false, message: 'CRON_SECRET not configured' },
+        { status: 500 }
+      );
+    }
+
+    const authHeader = request.headers.get('authorization');
+    const cronHeader = request.headers.get('x-cron-secret');
+    const provided = cronHeader || (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+
+    if (provided !== secret) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    return handler(request);
+  };
+}

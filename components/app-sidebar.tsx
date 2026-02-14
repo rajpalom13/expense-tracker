@@ -1,12 +1,17 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
   IconChartLine,
+  IconClock,
   IconDashboard,
+  IconHeartbeat,
   IconReceipt,
+  IconTarget,
   IconWallet,
   IconPigMoney,
+  IconSparkles,
   IconTrendingUp,
 } from "@tabler/icons-react"
 
@@ -54,6 +59,26 @@ const data = {
       url: "/investments",
       icon: IconTrendingUp,
     },
+    {
+      title: "Financial Health",
+      url: "/financial-health",
+      icon: IconHeartbeat,
+    },
+    {
+      title: "Goals",
+      url: "/goals",
+      icon: IconTarget,
+    },
+    {
+      title: "AI Insights",
+      url: "/ai-insights",
+      icon: IconSparkles,
+    },
+    {
+      title: "Cron Jobs",
+      url: "/cron",
+      icon: IconClock,
+    },
   ],
 }
 
@@ -67,10 +92,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               asChild
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
-              <a href="/dashboard">
+              <Link href="/dashboard">
                 <IconPigMoney className="!size-5" />
                 <span className="text-base font-semibold">Finance Tracker</span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

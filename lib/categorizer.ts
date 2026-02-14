@@ -1,9 +1,29 @@
 /**
  * Auto-categorization engine for transactions
  * Uses merchant names and keywords to classify transactions automatically
+ * Includes fuzzy matching to handle bank-mangled merchant names
  */
 
 import { TransactionCategory } from './types';
+
+/**
+ * Normalize text by removing all whitespace for fuzzy comparison.
+ * Banks often mangle merchant names by inserting spaces or truncating,
+ * e.g. "ZEPTONO W" -> "zeptonow", "HungerBo x" -> "hungerbox"
+ */
+function stripSpaces(text: string): string {
+  return text.replace(/\s+/g, '');
+}
+
+/**
+ * Fuzzy match: checks if the pattern appears as a substring
+ * after stripping all spaces from both the text and the pattern.
+ */
+function fuzzyMatch(text: string, pattern: string): boolean {
+  const normalizedText = stripSpaces(text.toLowerCase());
+  const normalizedPattern = stripSpaces(pattern.toLowerCase());
+  return normalizedText.includes(normalizedPattern);
+}
 
 /**
  * Merchant patterns for category matching
@@ -45,6 +65,9 @@ const CATEGORY_PATTERNS: Record<TransactionCategory, string[]> = {
     'refund',
     'poonam',
     'jasvin',
+    'mohit',
+    'chhavi',
+    'aaryan',
     'google',
     'transfer received',
   ],
@@ -147,6 +170,7 @@ const CATEGORY_PATTERNS: Record<TransactionCategory, string[]> = {
     'hungerbox',
     'hunger box',
     'food delivery',
+    'wrap chip',
   ],
   [TransactionCategory.ENTERTAINMENT]: [
     'movie',
@@ -175,6 +199,7 @@ const CATEGORY_PATTERNS: Record<TransactionCategory, string[]> = {
     'clothing',
     'electronics',
     'zudio',
+    'rebel',
   ],
   [TransactionCategory.TRAVEL]: [
     'flight',
@@ -236,6 +261,7 @@ const CATEGORY_PATTERNS: Record<TransactionCategory, string[]> = {
     'shares',
     'zerodha',
     'groww',
+    'growsy',
     'upstox',
   ],
   [TransactionCategory.LOAN_PAYMENT]: [
@@ -282,12 +308,21 @@ const CATEGORY_PATTERNS: Record<TransactionCategory, string[]> = {
     'miscellaneous',
     'misc',
     'other',
+    'monu',
+    'ramesh',
+    'binder',
+    'ishan',
+    'punit',
+    'amit ku',
+    'jatinder',
+    'shashwa',
   ],
   [TransactionCategory.UNCATEGORIZED]: [],
 };
 
 /**
  * Categorizes a transaction based on merchant name and description
+ * Uses fuzzy matching to handle bank-mangled merchant names
  * @param merchant - Merchant name from transaction
  * @param description - Transaction description
  * @returns Detected category or UNCATEGORIZED
@@ -296,12 +331,12 @@ export function categorizeTransaction(
   merchant: string,
   description: string
 ): TransactionCategory {
-  const searchText = `${merchant} ${description}`.toLowerCase();
+  const searchText = `${merchant} ${description}`;
 
-  // Try to match against category patterns
+  // Try to match against category patterns using fuzzy matching
   for (const [category, patterns] of Object.entries(CATEGORY_PATTERNS)) {
     for (const pattern of patterns) {
-      if (searchText.includes(pattern.toLowerCase())) {
+      if (fuzzyMatch(searchText, pattern)) {
         return category as TransactionCategory;
       }
     }
@@ -335,7 +370,7 @@ export function getSuggestedCategories(
   merchant: string,
   description: string
 ): Array<{ category: TransactionCategory; confidence: number }> {
-  const searchText = `${merchant} ${description}`.toLowerCase();
+  const searchText = `${merchant} ${description}`;
   const suggestions: Array<{ category: TransactionCategory; confidence: number }> = [];
 
   for (const [category, patterns] of Object.entries(CATEGORY_PATTERNS)) {
@@ -345,7 +380,7 @@ export function getSuggestedCategories(
     if (totalMatches === 0) continue;
 
     for (const pattern of patterns) {
-      if (searchText.includes(pattern.toLowerCase())) {
+      if (fuzzyMatch(searchText, pattern)) {
         matchCount++;
       }
     }
@@ -354,7 +389,7 @@ export function getSuggestedCategories(
       const confidence = matchCount / totalMatches;
       suggestions.push({
         category: category as TransactionCategory,
-        confidence: Math.min(confidence * 100, 100), // Convert to percentage
+        confidence: Math.min(confidence * 100, 100),
       });
     }
   }
@@ -402,9 +437,6 @@ export function merchantMatchesCategory(
   category: TransactionCategory
 ): boolean {
   const patterns = CATEGORY_PATTERNS[category];
-  const merchantLower = merchant.toLowerCase();
 
-  return patterns.some(pattern =>
-    merchantLower.includes(pattern.toLowerCase())
-  );
+  return patterns.some(pattern => fuzzyMatch(merchant, pattern));
 }

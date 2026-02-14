@@ -207,20 +207,56 @@ function parseTransaction(row: string[], index: number): Transaction | null {
     const amount = creditAmount || debitAmount;
     const isCredit = txn_type === 'credit' || creditAmount > 0;
 
-    // Extract merchant from description
-    // Format: UPI/DR/ref/MERCHANT/BANK/identifier/...
-    // Extract the 4th segment after splitting by '/'
+    // Extract merchant from description based on transaction format
     let merchant = '';
-    if (description?.includes('UPI/')) {
-      const parts = description.split('/');
+    const desc = description || '';
+
+    if (desc.includes('UPI/')) {
+      // UPI format: UPI/DR/ref/MERCHANT/BANK/identifier/...
+      const parts = desc.split('/');
       if (parts.length > 3) {
-        // Get merchant from 4th position (index 3)
         merchant = parts[3]?.trim() || '';
+      }
+    } else if (desc.includes('IMPS/')) {
+      // IMPS format: DEP TFR IMPS/ref/MERCHANT/identifier/...
+      // Similar to UPI - merchant is at index 2 after splitting on '/'
+      const parts = desc.split('/');
+      if (parts.length > 2) {
+        merchant = parts[2]?.trim() || '';
+      }
+    } else if (desc.includes('NEFT*') || desc.includes('NEFT/')) {
+      // NEFT format: DEP TFR NEFT*UCBA0001961*UCBAH26012083914*NOTATMRP INNOVA
+      // Extract after last '*'
+      const sep = desc.includes('NEFT*') ? '*' : '/';
+      const parts = desc.split(sep);
+      if (parts.length > 1) {
+        merchant = parts[parts.length - 1]?.trim() || '';
+      }
+    } else if (desc.includes('INB')) {
+      // Net Banking format: WDL TFR INB THAPAR INSTITUTE OF ENGIN
+      // Extract text after "INB "
+      const inbIndex = desc.indexOf('INB ');
+      if (inbIndex !== -1) {
+        merchant = desc.substring(inbIndex + 4).trim();
       }
     }
 
+    // Detect payment method from description
+    let paymentMethod: PaymentMethod;
+    if (desc.includes('UPI/')) {
+      paymentMethod = PaymentMethod.UPI;
+    } else if (desc.includes('NEFT*') || desc.includes('NEFT/')) {
+      paymentMethod = PaymentMethod.NEFT;
+    } else if (desc.includes('IMPS/')) {
+      paymentMethod = PaymentMethod.IMPS;
+    } else if (desc.includes('INB') || desc.includes('INB/')) {
+      paymentMethod = PaymentMethod.NET_BANKING;
+    } else {
+      paymentMethod = PaymentMethod.OTHER;
+    }
+
     // Categorize transaction using merchant and description
-    const category = categorizeTransaction(merchant || '', description || '');
+    const category = categorizeTransaction(merchant || '', desc);
 
     // Parse balance amount
     const balanceAmount = balance ? parseFloat(balance.replace(/[^0-9.-]/g, '')) : undefined;
@@ -229,12 +265,12 @@ function parseTransaction(row: string[], index: number): Transaction | null {
     return {
       id: txn_id,
       date: parsedDate,
-      description: description || '',
+      description: desc,
       merchant: merchant,
       category: category,
       amount: amount,
       type: isCredit ? TransactionType.INCOME : TransactionType.EXPENSE,
-      paymentMethod: description?.includes('UPI') ? PaymentMethod.UPI : PaymentMethod.OTHER,
+      paymentMethod: paymentMethod,
       account: account_source || 'Unknown',
       status: TransactionStatus.COMPLETED,
       tags: [],

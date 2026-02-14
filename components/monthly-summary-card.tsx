@@ -90,10 +90,22 @@ export function MonthlySummaryCard({ metrics }: MonthlySummaryCardProps) {
             <p className="mt-2 text-xl font-semibold">₹{metrics.totalExpenses.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground">{metrics.expenseTransactionCount} transactions</p>
           </div>
-          <div className="rounded-lg border border-border/60 p-4">
-            <p className="text-xs text-muted-foreground">Savings Rate</p>
-            <p className="mt-2 text-xl font-semibold">{metrics.savingsRate.toFixed(1)}%</p>
-            <p className="text-xs text-muted-foreground">Of income saved</p>
+          <div className={`rounded-lg border p-4 ${
+            metrics.savingsRate >= 0
+              ? "border-border/60"
+              : "border-rose-500/30 bg-rose-500/5"
+          }`}>
+            <p className="text-xs text-muted-foreground">
+              {metrics.savingsRate < 0 ? "Overspend Rate" : "Savings Rate"}
+            </p>
+            <p className={`mt-2 text-xl font-semibold ${metrics.savingsRate < 0 ? "text-rose-600" : ""}`}>
+              {metrics.savingsRate < 0
+                ? `Overspent by ${Math.abs(metrics.savingsRate).toFixed(1)}%`
+                : `${metrics.savingsRate.toFixed(1)}%`}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {metrics.savingsRate < 0 ? "Expenses exceed income" : "Of income saved"}
+            </p>
           </div>
         </div>
       </CardContent>

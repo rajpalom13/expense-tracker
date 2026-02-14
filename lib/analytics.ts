@@ -50,7 +50,8 @@ export function calculateAnalytics(transactions: Transaction[]): Analytics {
     TransactionType.EXPENSE
   );
   const netSavings = totalIncome - totalExpenses;
-  const savingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0;
+  const rawSavingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0;
+  const savingsRate = Math.max(-100, Math.min(100, rawSavingsRate));
 
   // Calculate monthly averages
   const monthlyTrends = calculateMonthlyTrends(completedTransactions);
@@ -241,7 +242,7 @@ export function calculateMonthlyTrends(
         income,
         expenses,
         savings,
-        savingsRate: income > 0 ? (savings / income) * 100 : 0,
+        savingsRate: Math.max(-100, Math.min(100, income > 0 ? (savings / income) * 100 : 0)),
         transactionCount: txns.length,
       };
     }
@@ -306,6 +307,7 @@ export function calculateDailyTrends(
 
 /**
  * Calculate daily average spend
+ * Divides total expenses by calendar days in the period (first to last transaction)
  * @param transactions - Array of transactions
  * @returns Daily average spend
  */
@@ -318,13 +320,18 @@ export function calculateDailyAverageSpend(
 
   if (expenses.length === 0) return 0;
 
-  // Get unique days
-  const uniqueDays = new Set(
-    expenses.map(t => toISODateString(t.date))
+  const totalExpenses = sum(expenses.map(t => t.amount));
+
+  // Use calendar days from first to last transaction (not just expense days)
+  const allDates = transactions.map(t => toDate(t.date).getTime());
+  const firstDate = Math.min(...allDates);
+  const lastDate = Math.max(...allDates);
+  const calendarDays = Math.max(
+    1,
+    Math.ceil((lastDate - firstDate) / (1000 * 60 * 60 * 24)) + 1
   );
 
-  const totalExpenses = sum(expenses.map(t => t.amount));
-  return totalExpenses / uniqueDays.size;
+  return totalExpenses / calendarDays;
 }
 
 /**
@@ -440,7 +447,8 @@ export function calculateFinancialSummary(
 
   // Calculate savings
   const savings = totalIncome - totalExpenses;
-  const savingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0;
+  const rawSavingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0;
+  const savingsRate = Math.max(-100, Math.min(100, rawSavingsRate));
 
   // Calculate transaction counts by type
   const byType: Record<TransactionType, number> = {
@@ -555,9 +563,10 @@ export function getSpendingByPeriod(
 
 /**
  * Calculate year-over-year growth
+ * For the current (partial) year, annualizes data by multiplying by 12/monthsElapsed
  * @param transactions - Array of transactions
  * @param year - Year to compare
- * @returns Growth percentage
+ * @returns Growth percentage and annualization flag
  */
 export function calculateYearOverYearGrowth(
   transactions: Transaction[],
@@ -566,6 +575,7 @@ export function calculateYearOverYearGrowth(
   incomeGrowth: number;
   expenseGrowth: number;
   savingsGrowth: number;
+  isAnnualized: boolean;
 } {
   const completed = transactions.filter(t => isCompletedStatus(t.status));
   // Get transactions for current and previous year
@@ -576,20 +586,31 @@ export function calculateYearOverYearGrowth(
     t => toDate(t.date).getFullYear() === year - 1
   );
 
-  // Calculate totals
-  const currentIncome = calculateTotalByType(
+  // Determine if current year is partial and needs annualization
+  const now = new Date();
+  const isCurrentYear = year === now.getFullYear();
+  const monthsElapsed = isCurrentYear ? now.getMonth() + 1 : 12;
+  const annualizationFactor = isCurrentYear && monthsElapsed < 12
+    ? 12 / monthsElapsed
+    : 1;
+  const isAnnualized = annualizationFactor > 1;
+
+  // Calculate totals (annualize current year if partial)
+  const rawCurrentIncome = calculateTotalByType(
     currentYearTxns,
     TransactionType.INCOME
   );
+  const currentIncome = rawCurrentIncome * annualizationFactor;
   const previousIncome = calculateTotalByType(
     previousYearTxns,
     TransactionType.INCOME
   );
 
-  const currentExpenses = calculateTotalByType(
+  const rawCurrentExpenses = calculateTotalByType(
     currentYearTxns,
     TransactionType.EXPENSE
   );
+  const currentExpenses = rawCurrentExpenses * annualizationFactor;
   const previousExpenses = calculateTotalByType(
     previousYearTxns,
     TransactionType.EXPENSE
@@ -618,5 +639,46 @@ export function calculateYearOverYearGrowth(
     incomeGrowth,
     expenseGrowth,
     savingsGrowth,
+    isAnnualized,
+  };
+}
+
+/**
+ * Result of separating one-time and recurring expenses
+ */
+export interface SeparatedExpenses {
+  oneTime: Transaction[];
+  recurring: Transaction[];
+  oneTimeTotal: number;
+  recurringTotal: number;
+  totalExpenses: number;
+}
+
+/**
+ * Separate one-time large expenses from recurring daily expenses
+ * Flags transactions above a threshold as "one-time" so analytics can show
+ * both total and "recurring daily" views.
+ *
+ * @param transactions - Array of transactions
+ * @param threshold - Amount threshold for one-time classification (default: 50000)
+ * @returns Separated expense categories
+ */
+export function separateOneTimeExpenses(
+  transactions: Transaction[],
+  threshold: number = 50000
+): SeparatedExpenses {
+  const expenses = transactions.filter(
+    t => t.type === TransactionType.EXPENSE && isCompletedStatus(t.status)
+  );
+
+  const oneTime = expenses.filter(t => t.amount >= threshold);
+  const recurring = expenses.filter(t => t.amount < threshold);
+
+  return {
+    oneTime,
+    recurring,
+    oneTimeTotal: sum(oneTime.map(t => t.amount)),
+    recurringTotal: sum(recurring.map(t => t.amount)),
+    totalExpenses: sum(expenses.map(t => t.amount)),
   };
 }

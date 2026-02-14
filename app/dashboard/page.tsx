@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -21,7 +21,9 @@ import {
   IconChartLine,
   IconCreditCard,
   IconDatabase,
+  IconHeartbeat,
   IconPigMoney,
+  IconShieldCheck,
   IconTrendingUp,
   IconWallet,
 } from "@tabler/icons-react"
@@ -58,6 +60,7 @@ import { SiteHeader } from "@/components/site-header"
 import { CategoryChart } from "@/components/category-chart"
 import { PaymentMethodChart } from "@/components/payment-method-chart"
 import { MetricTile } from "@/components/metric-tile"
+import { AiInsightsWidget } from "@/components/ai-insights-widget"
 import { PeriodBridge } from "@/components/period-bridge"
 import { SyncButtonCompact } from "@/components/sync-button"
 import {
@@ -67,6 +70,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -118,15 +122,95 @@ export default function DashboardPage() {
     syncFromSheets,
   } = useTransactions()
 
+  const [nwiSplit, setNwiSplit] = useState<{
+    totalIncome: number
+    needs: { targetPercentage: number; actualPercentage: number; actualAmount: number; targetAmount: number }
+    wants: { targetPercentage: number; actualPercentage: number; actualAmount: number; targetAmount: number }
+    investments: { targetPercentage: number; actualPercentage: number; actualAmount: number; targetAmount: number }
+  } | null>(null)
+  const [healthMetrics, setHealthMetrics] = useState<{
+    financialFreedomScore: number
+    scoreBreakdown: { savingsRate: number; emergencyFund: number; nwiAdherence: number; investmentRate: number }
+    emergencyFundMonths: number
+    emergencyFundTarget: number
+  } | null>(null)
+
+  const { year, month, label: monthLabel } = getCurrentMonth()
+  const currentWeek = getCurrentWeek()
+  const monthTransactions = getMonthTransactions(transactions, year, month)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    fetch("/api/nwi-config")
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success || !data.config) return
+        // Compute NWI split from current month transactions
+        const config = data.config
+        const completed = monthTransactions.filter(
+          (t: { type: string; status: string }) => t.type === "expense" && isCompletedStatus(t.status)
+        )
+        const income = monthTransactions
+          .filter((t: { type: string; status: string }) => t.type === "income" && isCompletedStatus(t.status))
+          .reduce((s: number, t: { amount: number }) => s + t.amount, 0)
+
+        const classify = (cat: string) => {
+          if (config.needs.categories.includes(cat)) return "needs"
+          if (config.investments.categories.includes(cat)) return "investments"
+          return "wants"
+        }
+
+        const buckets = { needs: 0, wants: 0, investments: 0 }
+        for (const t of completed) {
+          buckets[classify(t.category)] += t.amount
+        }
+        const total = buckets.needs + buckets.wants + buckets.investments
+
+        setNwiSplit({
+          totalIncome: income,
+          needs: {
+            targetPercentage: config.needs.percentage,
+            actualPercentage: total > 0 ? (buckets.needs / total) * 100 : 0,
+            actualAmount: buckets.needs,
+            targetAmount: income * config.needs.percentage / 100,
+          },
+          wants: {
+            targetPercentage: config.wants.percentage,
+            actualPercentage: total > 0 ? (buckets.wants / total) * 100 : 0,
+            actualAmount: buckets.wants,
+            targetAmount: income * config.wants.percentage / 100,
+          },
+          investments: {
+            targetPercentage: config.investments.percentage,
+            actualPercentage: total > 0 ? (buckets.investments / total) * 100 : 0,
+            actualAmount: buckets.investments,
+            targetAmount: income * config.investments.percentage / 100,
+          },
+        })
+      })
+      .catch(() => {})
+
+    fetch("/api/financial-health")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.metrics) {
+          setHealthMetrics({
+            financialFreedomScore: data.metrics.financialFreedomScore,
+            scoreBreakdown: data.metrics.scoreBreakdown,
+            emergencyFundMonths: data.metrics.emergencyFundMonths,
+            emergencyFundTarget: data.metrics.emergencyFundTarget,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [isAuthenticated, monthTransactions])
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push("/login")
     }
   }, [isAuthenticated, authLoading, router])
 
-  const { year, month, label: monthLabel } = getCurrentMonth()
-  const currentWeek = getCurrentWeek()
-  const monthTransactions = getMonthTransactions(transactions, year, month)
   const weekTransactions = getWeekTransactions(
     transactions,
     currentWeek.year,
@@ -241,8 +325,8 @@ export default function DashboardPage() {
                   <MetricTile
                     label="Current Balance"
                     value={formatCurrency(accountSummary.currentBalance)}
-                    trendLabel="Since tracking start"
-                    change={accountSummary.startingBalance !== 0 ? (accountSummary.netChange / Math.abs(accountSummary.startingBalance)) * 100 : 0}
+                    trendLabel={`Opening: ${formatCurrency(accountSummary.openingBalance)}`}
+                    change={accountSummary.openingBalance !== 0 ? (accountSummary.netChange / Math.abs(accountSummary.openingBalance)) * 100 : 0}
                     tone={accountSummary.netChange >= 0 ? "positive" : "negative"}
                     icon={<IconWallet className="h-5 w-5" />}
                   />
@@ -277,11 +361,15 @@ export default function DashboardPage() {
                     tone="positive"
                   />
                   <MetricTile
-                    label="Savings Rate"
-                    value={`${(monthlyMetrics?.savingsRate || 0).toFixed(1)}%`}
+                    label={(monthlyMetrics?.savingsRate ?? 0) < 0 ? "Overspend Rate" : "Savings Rate"}
+                    value={
+                      (monthlyMetrics?.savingsRate ?? 0) < 0
+                        ? `Overspent by ${Math.abs(monthlyMetrics?.savingsRate ?? 0).toFixed(1)}%`
+                        : `${(monthlyMetrics?.savingsRate ?? 0).toFixed(1)}%`
+                    }
                     trendLabel="Income saved"
                     icon={<IconPigMoney className="h-5 w-5" />}
-                    tone={(monthlyMetrics?.savingsRate || 0) >= 0 ? "positive" : "negative"}
+                    tone={(monthlyMetrics?.savingsRate ?? 0) >= 0 ? "positive" : "negative"}
                   />
                 </div>
 
@@ -303,6 +391,136 @@ export default function DashboardPage() {
                     closingBalance={weekClosing}
                   />
                 </div>
+
+                {/* Financial Health & NWI Strip */}
+                {(healthMetrics || nwiSplit) && (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {/* Financial Freedom Score */}
+                    {healthMetrics && (
+                      <Card className="border border-border/70">
+                        <CardContent className="p-5">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                <IconHeartbeat className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Freedom Score</p>
+                                <Link href="/financial-health" className="text-xs text-muted-foreground hover:underline">View details</Link>
+                              </div>
+                            </div>
+                            <span className={`text-3xl font-bold ${
+                              healthMetrics.financialFreedomScore >= 75 ? "text-emerald-600" :
+                              healthMetrics.financialFreedomScore >= 50 ? "text-amber-600" :
+                              "text-rose-600"
+                            }`}>
+                              {healthMetrics.financialFreedomScore}
+                            </span>
+                          </div>
+                          <Progress
+                            value={healthMetrics.financialFreedomScore}
+                            className={`h-2 ${
+                              healthMetrics.financialFreedomScore >= 75 ? "[&>div]:bg-emerald-500" :
+                              healthMetrics.financialFreedomScore >= 50 ? "[&>div]:bg-amber-500" :
+                              "[&>div]:bg-rose-500"
+                            }`}
+                          />
+                          <div className="mt-2 grid grid-cols-4 gap-1">
+                            {[
+                              { label: "Save", value: healthMetrics.scoreBreakdown.savingsRate, max: 25 },
+                              { label: "Fund", value: healthMetrics.scoreBreakdown.emergencyFund, max: 25 },
+                              { label: "NWI", value: healthMetrics.scoreBreakdown.nwiAdherence, max: 25 },
+                              { label: "Invest", value: healthMetrics.scoreBreakdown.investmentRate, max: 25 },
+                            ].map(item => (
+                              <div key={item.label} className="text-center">
+                                <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                                <p className="text-xs font-semibold">{item.value}/{item.max}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Emergency Fund */}
+                    {healthMetrics && (
+                      <Card className="border border-border/70">
+                        <CardContent className="p-5">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                <IconShieldCheck className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Emergency Fund</p>
+                                <p className="text-xs text-muted-foreground">Target: {healthMetrics.emergencyFundTarget} months</p>
+                              </div>
+                            </div>
+                            <span className={`text-3xl font-bold ${
+                              healthMetrics.emergencyFundMonths >= 6 ? "text-emerald-600" :
+                              healthMetrics.emergencyFundMonths >= 3 ? "text-amber-600" :
+                              "text-rose-600"
+                            }`}>
+                              {healthMetrics.emergencyFundMonths.toFixed(1)}
+                            </span>
+                          </div>
+                          <Progress
+                            value={Math.min((healthMetrics.emergencyFundMonths / healthMetrics.emergencyFundTarget) * 100, 100)}
+                            className={`h-2 ${
+                              healthMetrics.emergencyFundMonths >= 6 ? "[&>div]:bg-emerald-500" :
+                              healthMetrics.emergencyFundMonths >= 3 ? "[&>div]:bg-amber-500" :
+                              "[&>div]:bg-rose-500"
+                            }`}
+                          />
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {healthMetrics.emergencyFundMonths >= healthMetrics.emergencyFundTarget
+                              ? "You've reached your emergency fund target!"
+                              : `${(healthMetrics.emergencyFundTarget - healthMetrics.emergencyFundMonths).toFixed(1)} months to go`}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* NWI Split */}
+                    {nwiSplit && (
+                      <Card className="border border-border/70">
+                        <CardContent className="p-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                              <IconWallet className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">N/W/I Split</p>
+                              <p className="text-xs text-muted-foreground">Target vs actual this month</p>
+                            </div>
+                          </div>
+                          <div className="space-y-2.5">
+                            {[
+                              { label: "Needs", data: nwiSplit.needs, color: "bg-blue-500" },
+                              { label: "Wants", data: nwiSplit.wants, color: "bg-orange-500" },
+                              { label: "Invest", data: nwiSplit.investments, color: "bg-emerald-500" },
+                            ].map(item => (
+                              <div key={item.label}>
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                  <span className="font-medium">{item.label}</span>
+                                  <span className="text-muted-foreground">
+                                    {item.data.actualPercentage.toFixed(0)}% / {item.data.targetPercentage}%
+                                  </span>
+                                </div>
+                                <div className="flex h-2 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={`${item.color} rounded-full transition-all`}
+                                    style={{ width: `${Math.min(item.data.actualPercentage, 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card className="border border-border/70">
@@ -577,6 +795,8 @@ export default function DashboardPage() {
                     </Table>
                   </CardContent>
                 </Card>
+
+                <AiInsightsWidget compact />
               </>
             )}
           </div>

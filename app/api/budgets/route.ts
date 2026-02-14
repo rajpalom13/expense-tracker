@@ -1,35 +1,58 @@
 /**
  * Budget API endpoints
- * Handles budget retrieval and updates using MongoDB
+ * Handles budget retrieval and updates using MongoDB.
+ *
+ * GET  - Returns merged budgets (from budget_categories collection).
+ * POST - Bulk-update all budget amounts (writes into budget_categories docs).
+ * PUT  - Update a single category's budget amount.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth, corsHeaders, handleOptions } from '@/lib/middleware';
 import { getMongoDb } from '@/lib/mongodb';
-import { DEFAULT_BUDGETS } from '@/lib/budget-mapping';
+import { buildSeedDocs, DEFAULT_BUDGETS } from '@/lib/budget-mapping';
 
-/**
- * OPTIONS handler for CORS preflight
- */
+const COLLECTION = 'budget_categories';
+
 export async function OPTIONS() {
   return handleOptions();
 }
 
 /**
  * GET /api/budgets
- * Retrieve budgets for the authenticated user
+ * Retrieve budgets for the authenticated user.
+ * Derives the budget record from budget_categories collection.
  */
 export async function GET(request: NextRequest) {
   return withAuth(async (_req, { user }) => {
     try {
       const db = await getMongoDb();
-      const doc = await db.collection('budgets').findOne({ userId: user.userId });
+      const col = db.collection(COLLECTION);
+
+      let docs = await col.find({ userId: user.userId }).toArray();
+
+      // Seed defaults on first access
+      if (docs.length === 0) {
+        const seeds = buildSeedDocs(user.userId);
+        await col.insertMany(seeds);
+        docs = await col.find({ userId: user.userId }).toArray();
+      }
+
+      const budgets: Record<string, number> = {};
+      let latestUpdatedAt: string | null = null;
+
+      for (const doc of docs) {
+        budgets[doc.name] = doc.budgetAmount;
+        if (!latestUpdatedAt || doc.updatedAt > latestUpdatedAt) {
+          latestUpdatedAt = doc.updatedAt;
+        }
+      }
 
       return NextResponse.json(
         {
           success: true,
-          budgets: doc?.budgets || DEFAULT_BUDGETS,
-          updatedAt: doc?.updatedAt || null,
+          budgets,
+          updatedAt: latestUpdatedAt,
         },
         { headers: corsHeaders() }
       );
@@ -45,7 +68,8 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/budgets
- * Update all budgets for the authenticated user
+ * Bulk-update all budget amounts for the authenticated user.
+ * Body: { budgets: Record<string, number> }
  */
 export async function POST(request: NextRequest) {
   return withAuth(async (req, { user }) => {
@@ -71,18 +95,17 @@ export async function POST(request: NextRequest) {
 
       const updatedAt = new Date().toISOString();
       const db = await getMongoDb();
+      const col = db.collection(COLLECTION);
 
-      await db.collection('budgets').updateOne(
-        { userId: user.userId },
-        {
-          $set: {
-            budgets,
-            updatedAt,
-            userId: user.userId,
-          },
-        },
-        { upsert: true }
+      // Update each category doc's budgetAmount
+      const ops = Object.entries(budgets).map(([name, amount]) =>
+        col.updateOne(
+          { userId: user.userId, name },
+          { $set: { budgetAmount: amount, updatedAt } },
+          { upsert: false }
+        )
       );
+      await Promise.all(ops);
 
       return NextResponse.json(
         {
@@ -105,7 +128,8 @@ export async function POST(request: NextRequest) {
 
 /**
  * PUT /api/budgets
- * Update a single budget category for the authenticated user
+ * Update a single budget category's amount.
+ * Body: { category, amount }
  */
 export async function PUT(request: NextRequest) {
   return withAuth(async (req, { user }) => {
@@ -129,22 +153,26 @@ export async function PUT(request: NextRequest) {
 
       const updatedAt = new Date().toISOString();
       const db = await getMongoDb();
+      const col = db.collection(COLLECTION);
 
-      const existing = await db.collection('budgets').findOne({ userId: user.userId });
-      const currentBudgets = existing?.budgets || DEFAULT_BUDGETS;
-      const updatedBudgets = { ...currentBudgets, [category]: amount };
-
-      await db.collection('budgets').updateOne(
-        { userId: user.userId },
-        {
-          $set: {
-            budgets: updatedBudgets,
-            updatedAt,
-            userId: user.userId,
-          },
-        },
-        { upsert: true }
+      const result = await col.updateOne(
+        { userId: user.userId, name: category },
+        { $set: { budgetAmount: amount, updatedAt } }
       );
+
+      if (result.matchedCount === 0) {
+        return NextResponse.json(
+          { success: false, error: `Category "${category}" not found` },
+          { status: 404, headers: corsHeaders() }
+        );
+      }
+
+      // Return full budgets for client sync
+      const docs = await col.find({ userId: user.userId }).toArray();
+      const updatedBudgets: Record<string, number> = {};
+      for (const doc of docs) {
+        updatedBudgets[doc.name] = doc.budgetAmount;
+      }
 
       return NextResponse.json(
         {

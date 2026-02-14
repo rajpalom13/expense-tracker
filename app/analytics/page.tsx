@@ -24,6 +24,7 @@ import {
   calculateDailyTrends,
   calculateMonthlyTrends,
   calculateYearOverYearGrowth,
+  separateOneTimeExpenses,
 } from "@/lib/analytics"
 import {
   getAvailableMonths,
@@ -51,6 +52,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -112,15 +114,30 @@ export default function AnalyticsPage() {
     [transactions, selectedMonth]
   )
 
-  const analytics = monthTransactions.length > 0
-    ? calculateAnalytics(monthTransactions)
+  const [excludeOneTime, setExcludeOneTime] = React.useState(false)
+
+  const separatedExpenses = React.useMemo(
+    () => separateOneTimeExpenses(monthTransactions),
+    [monthTransactions]
+  )
+
+  const effectiveTransactions = React.useMemo(() => {
+    if (!excludeOneTime) return monthTransactions
+    // Remove one-time large expenses from the transaction set
+    const oneTimeIds = new Set(separatedExpenses.oneTime.map((t) => t.id))
+    return monthTransactions.filter((t) => !oneTimeIds.has(t.id))
+  }, [monthTransactions, excludeOneTime, separatedExpenses])
+
+  const analytics = effectiveTransactions.length > 0
+    ? calculateAnalytics(effectiveTransactions)
     : null
   const monthlyTrends = calculateMonthlyTrends(transactions)
-  const dailyTrends = calculateDailyTrends(monthTransactions)
-  const categoryBreakdown = calculateCategoryBreakdown(monthTransactions)
+  const dailyTrends = calculateDailyTrends(effectiveTransactions)
+  const categoryBreakdown = calculateCategoryBreakdown(effectiveTransactions)
   const accountSummary = calculateAccountSummary(transactions)
   const balanceTrend = calculateBalanceTrend(monthTransactions)
   const showBalanceTrendDots = balanceTrend.length <= 1
+  const hasOneTimeExpenses = separatedExpenses.oneTime.length > 0
 
   const yearlyData = React.useMemo(() => {
     const map = new Map<number, { income: number; expenses: number }>()
@@ -202,8 +219,8 @@ export default function AnalyticsPage() {
                   <MetricTile
                     label="Account Balance"
                     value={formatCurrency(accountSummary.currentBalance)}
-                    trendLabel="Since first record"
-                    change={accountSummary.startingBalance !== 0 ? (accountSummary.netChange / Math.abs(accountSummary.startingBalance)) * 100 : 0}
+                    trendLabel={`Opening: ${formatCurrency(accountSummary.openingBalance)}`}
+                    change={accountSummary.openingBalance !== 0 ? (accountSummary.netChange / Math.abs(accountSummary.openingBalance)) * 100 : 0}
                     tone={accountSummary.netChange >= 0 ? "positive" : "negative"}
                     icon={<IconWallet className="h-5 w-5" />}
                   />
@@ -222,13 +239,40 @@ export default function AnalyticsPage() {
                     tone="negative"
                   />
                   <MetricTile
-                    label="Savings Rate"
-                    value={`${(analytics?.savingsRate || 0).toFixed(1)}%`}
+                    label={(analytics?.savingsRate ?? 0) < 0 ? "Overspend Rate" : "Savings Rate"}
+                    value={
+                      (analytics?.savingsRate ?? 0) < 0
+                        ? `Overspent by ${Math.abs(analytics?.savingsRate ?? 0).toFixed(1)}%`
+                        : `${(analytics?.savingsRate ?? 0).toFixed(1)}%`
+                    }
                     trendLabel="Month to date"
                     icon={<IconPigMoney className="h-5 w-5" />}
-                    tone={(analytics?.savingsRate || 0) >= 0 ? "positive" : "negative"}
+                    tone={(analytics?.savingsRate ?? 0) >= 0 ? "positive" : "negative"}
                   />
                 </div>
+
+                {hasOneTimeExpenses && (
+                  <Card className="border border-border/70">
+                    <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Large one-time expenses detected
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {separatedExpenses.oneTime.length} transaction{separatedExpenses.oneTime.length > 1 ? "s" : ""} above {formatCurrency(50000)} totalling{" "}
+                          {formatCurrency(separatedExpenses.oneTimeTotal)} ({((separatedExpenses.oneTimeTotal / separatedExpenses.totalExpenses) * 100).toFixed(1)}% of all expenses)
+                        </p>
+                      </div>
+                      <Button
+                        variant={excludeOneTime ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setExcludeOneTime((prev) => !prev)}
+                      >
+                        {excludeOneTime ? "Showing recurring only" : "Show recurring only"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <Tabs defaultValue="snapshot" className="space-y-4">
                   <TabsList className="flex flex-wrap gap-2">
@@ -388,7 +432,12 @@ export default function AnalyticsPage() {
                       <Card className="border border-border/70">
                         <CardHeader>
                           <CardTitle>Year Over Year</CardTitle>
-                          <CardDescription>Current year vs last year</CardDescription>
+                          <CardDescription>
+                            Current year vs last year
+                            {yoyGrowth.isAnnualized && (
+                              <Badge variant="secondary" className="ml-2 text-xs">Annualized</Badge>
+                            )}
+                          </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
                           <div className="flex items-center justify-between">
@@ -403,6 +452,11 @@ export default function AnalyticsPage() {
                             <span className="text-sm text-muted-foreground">Savings Growth</span>
                             <Badge variant="outline">{yoyGrowth.savingsGrowth.toFixed(1)}%</Badge>
                           </div>
+                          {yoyGrowth.isAnnualized && (
+                            <p className="text-xs text-muted-foreground pt-1">
+                              * Current year data is annualized (projected to full year based on months elapsed)
+                            </p>
+                          )}
                         </CardContent>
                       </Card>
                       <Card className="border border-border/70 md:col-span-2">

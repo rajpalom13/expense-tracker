@@ -70,6 +70,8 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import type { StockHolding, StockQuote, MutualFundHolding, MutualFundTransaction, SipEntry, StockTransaction } from "@/lib/sips-stocks"
+import { calculateInvestmentXIRR, calculateCAGR } from "@/lib/xirr"
+import { isGrowwTransaction } from "@/lib/groww-parser"
 
 // ─── Helpers ───
 
@@ -219,6 +221,16 @@ export default function InvestmentsPage() {
   // Add SIP form
   const [showAddSip, setShowAddSip] = useState(false)
   const [sipForm, setSipForm] = useState({ name: "", provider: "", monthlyAmount: "", startDate: "", expectedAnnualReturn: "", status: "active" })
+
+  // SIP projection & trailing returns
+  const [trailingReturns, setTrailingReturns] = useState<Record<string, { period: string; annualizedReturn: number }[]>>({})
+  const [isLoadingReturns, setIsLoadingReturns] = useState(false)
+
+  // SIP deduction matching
+  const [sipMatches, setSipMatches] = useState<Array<{ sipName: string; sipAmount: number; bankTxn: { date: string; description: string; amount: number }; dateProximity: number }>>([])
+  const [unmatchedGrowwTxns, setUnmatchedGrowwTxns] = useState<Array<{ date: string; description: string; amount: number }>>([])
+  const [bankTxnsForMatching, setBankTxnsForMatching] = useState<Array<{ date: string; description: string; amount: number }>>([])
+  const [hasFetchedBankTxns, setHasFetchedBankTxns] = useState(false)
 
   // ─── CSV Parser ───
 
@@ -633,6 +645,62 @@ export default function InvestmentsPage() {
   useEffect(() => { if (isAuthenticated) loadAll() }, [isAuthenticated])
   useEffect(() => { if (stocks.length) refreshQuotes(stocks) }, [stocks])
 
+  // Fetch bank transactions for SIP matching
+  useEffect(() => {
+    if (!isAuthenticated || hasFetchedBankTxns) return
+    const fetchBankTxns = async () => {
+      try {
+        const res = await fetch("/api/transactions?limit=500")
+        const data = await res.json()
+        if (data.success && data.transactions) {
+          const txns = data.transactions
+            .filter((t: { description: string; amount: number; type: string }) =>
+              t.type === "expense" && isGrowwTransaction(t.description)
+            )
+            .map((t: { date: string; description: string; amount: number }) => ({
+              date: t.date,
+              description: t.description,
+              amount: Math.abs(t.amount),
+            }))
+          setBankTxnsForMatching(txns)
+        }
+        setHasFetchedBankTxns(true)
+      } catch {
+        setHasFetchedBankTxns(true)
+      }
+    }
+    fetchBankTxns()
+  }, [isAuthenticated, hasFetchedBankTxns])
+
+  // Match SIP deductions when both SIPs and bank transactions are loaded
+  useEffect(() => {
+    if (!sips.length || !bankTxnsForMatching.length) return
+    const activeSips = sips.filter((s) => s.status === "active")
+    const matched: typeof sipMatches = []
+    const usedIndices = new Set<number>()
+
+    for (const sip of activeSips) {
+      const sipStart = new Date(sip.startDate)
+      if (isNaN(sipStart.getTime())) continue
+      const sipDay = sipStart.getDate()
+
+      for (let i = 0; i < bankTxnsForMatching.length; i++) {
+        if (usedIndices.has(i)) continue
+        const txn = bankTxnsForMatching[i]
+        const txnDate = new Date(txn.date)
+        if (isNaN(txnDate.getTime())) continue
+        const dayDiff = Math.abs(txnDate.getDate() - sipDay)
+        const amountMatch = Math.abs(txn.amount - sip.monthlyAmount) < sip.monthlyAmount * 0.15
+        if (dayDiff <= 3 && amountMatch) {
+          usedIndices.add(i)
+          matched.push({ sipName: sip.name, sipAmount: sip.monthlyAmount, bankTxn: txn, dateProximity: dayDiff })
+        }
+      }
+    }
+    setSipMatches(matched)
+    setUnmatchedGrowwTxns(bankTxnsForMatching.filter((_, i) => !usedIndices.has(i)))
+  }, [sips, bankTxnsForMatching])
+
   // ─── Edit Handlers ───
 
   const openEditStock = (s: StockHolding) => {
@@ -849,6 +917,87 @@ export default function InvestmentsPage() {
 
   const realizedPL = useMemo(() => exitedStocks.reduce((sum, e) => sum + e.realizedPL, 0), [exitedStocks])
 
+  // XIRR for stocks (from transaction history)
+  const stockXIRR = useMemo(() => {
+    if (!stockTxns.length) return null
+    const buyTxns = stockTxns
+      .filter((t) => t.type === "BUY")
+      .map((t) => ({
+        date: new Date(t.executionDate),
+        amount: t.value,
+      }))
+      .filter((t) => !isNaN(t.date.getTime()))
+    if (!buyTxns.length) return null
+    return calculateInvestmentXIRR(buyTxns, stockTotals.totalValue)
+  }, [stockTxns, stockTotals.totalValue])
+
+  // XIRR for mutual funds (from transaction history)
+  const fundXIRR = useMemo(() => {
+    if (!mutualFundTxns.length) return null
+    const purchases = mutualFundTxns
+      .filter((t) => t.transactionType?.toUpperCase() === "PURCHASE")
+      .map((t) => ({
+        date: new Date(t.date),
+        amount: Number(t.amount) || 0,
+      }))
+      .filter((t) => !isNaN(t.date.getTime()) && t.amount > 0)
+    if (!purchases.length) return null
+    return calculateInvestmentXIRR(purchases, fundTotals.current)
+  }, [mutualFundTxns, fundTotals.current])
+
+  // Portfolio XIRR
+  const portfolioXIRR = useMemo(() => {
+    const allInvestments: Array<{ date: Date; amount: number }> = []
+    stockTxns.filter((t) => t.type === "BUY").forEach((t) => {
+      const d = new Date(t.executionDate)
+      if (!isNaN(d.getTime())) allInvestments.push({ date: d, amount: t.value })
+    })
+    mutualFundTxns.filter((t) => t.transactionType?.toUpperCase() === "PURCHASE").forEach((t) => {
+      const d = new Date(t.date)
+      const amt = Number(t.amount) || 0
+      if (!isNaN(d.getTime()) && amt > 0) allInvestments.push({ date: d, amount: amt })
+    })
+    if (!allInvestments.length) return null
+    return calculateInvestmentXIRR(allInvestments, portfolioTotal.current)
+  }, [stockTxns, mutualFundTxns, portfolioTotal.current])
+
+  // SIP Projections - use expected return or fallback to 12%
+  const sipProjections = useMemo(() => {
+    const activeSips = sips.filter((s) => s.status === "active")
+    if (!activeSips.length) return null
+
+    const monthlyTotal = activeSips.reduce((sum, s) => sum + s.monthlyAmount, 0)
+    // Use average expected return from SIPs, fallback to 12%
+    const avgReturn = activeSips.reduce((sum, s) => sum + (s.expectedAnnualReturn || 12), 0) / activeSips.length
+    const monthlyRate = avgReturn / 100 / 12
+
+    const projectForYears = (years: number) => {
+      const months = years * 12
+      // FV of annuity: PMT * ((1 + r)^n - 1) / r * (1 + r)
+      const fv = monthlyTotal * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate) * (1 + monthlyRate)
+      const invested = monthlyTotal * months
+      return { years, invested, projected: Math.round(fv), returns: Math.round(fv - invested), returnPct: ((fv - invested) / invested * 100) }
+    }
+
+    return {
+      monthlyTotal,
+      avgReturn: Math.round(avgReturn * 10) / 10,
+      projections: [
+        projectForYears(3),
+        projectForYears(5),
+        projectForYears(10),
+        projectForYears(15),
+        projectForYears(20),
+      ],
+      chartData: Array.from({ length: 21 }, (_, i) => {
+        const months = i * 12
+        const invested = monthlyTotal * months
+        const projected = months > 0 ? monthlyTotal * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate) * (1 + monthlyRate) : 0
+        return { year: i, invested: Math.round(invested), projected: Math.round(projected) }
+      }),
+    }
+  }, [sips])
+
   // ─── Render ───
 
   if (authLoading) return <div className="flex min-h-screen items-center justify-center"><Skeleton className="h-8 w-48" /></div>
@@ -882,7 +1031,7 @@ export default function InvestmentsPage() {
                       {portfolioTotal.plPercent >= 0 ? "+" : ""}{portfolioTotal.plPercent.toFixed(2)}%
                     </Badge>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-border/50 pt-3">
+                  <div className="mt-3 grid grid-cols-3 gap-3 border-t border-border/50 pt-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Invested</div>
                       <div className="text-sm font-semibold tabular-nums">{fmt(portfolioTotal.invested)}</div>
@@ -891,6 +1040,12 @@ export default function InvestmentsPage() {
                       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Day Change</div>
                       <div className={`text-sm font-semibold tabular-nums ${dayChange >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                         {dayChange >= 0 ? "+" : ""}{fmt(dayChange)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">XIRR</div>
+                      <div className={`text-sm font-semibold tabular-nums ${(portfolioXIRR || 0) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {portfolioXIRR !== null ? `${portfolioXIRR >= 0 ? "+" : ""}${portfolioXIRR.toFixed(1)}%` : <span className="text-muted-foreground text-xs">N/A</span>}
                       </div>
                     </div>
                   </div>
@@ -1256,6 +1411,11 @@ export default function InvestmentsPage() {
                         <span className={stockTotals.totalPL >= 0 ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>
                           P&L: {fmt(stockTotals.totalPL)} ({stockTotals.plPercent.toFixed(1)}%)
                         </span>
+                        {stockXIRR !== null && (
+                          <span className={stockXIRR >= 0 ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>
+                            XIRR: {stockXIRR >= 0 ? "+" : ""}{stockXIRR.toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -1447,6 +1607,11 @@ export default function InvestmentsPage() {
                         <span className={fundTotals.returns >= 0 ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>
                           P&L: {fmt(fundTotals.returns)} ({fundTotals.plPercent.toFixed(1)}%)
                         </span>
+                        {fundXIRR !== null && (
+                          <span className={fundXIRR >= 0 ? "text-emerald-600 font-semibold" : "text-rose-600 font-semibold"}>
+                            XIRR: {fundXIRR >= 0 ? "+" : ""}{fundXIRR.toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -1498,7 +1663,7 @@ export default function InvestmentsPage() {
                 </div>
                 {sipImportMsg && <div className="rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{sipImportMsg}</div>}
                 <div className="text-xs text-muted-foreground">
-                  SIPs are auto-detected from Groww MF Order History: schemes with 2+ PURCHASE transactions are treated as SIPs.
+                  SIPs are auto-detected from Groww MF Order History: schemes with 2+ PURCHASE transactions are treated as SIPs. XIRR from transaction data: {fundXIRR !== null ? `${fundXIRR >= 0 ? "+" : ""}${fundXIRR.toFixed(1)}%` : "N/A"}.
                 </div>
 
                 {showAddSip && (
@@ -1587,6 +1752,114 @@ export default function InvestmentsPage() {
                       <span className="font-medium">{sips.length} SIP(s)</span>
                       <span>Monthly total: <strong>{fmt(sipTotals.monthlyTotal)}</strong></span>
                     </div>
+                  </Card>
+                )}
+
+                {/* SIP Projection Calculator */}
+                {sipProjections && (
+                  <Card className="border border-border/70">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <IconTrendingUp className="size-4" /> SIP Projection Calculator
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Projected growth at {sipProjections.avgReturn}% annualized return with {fmt(sipProjections.monthlyTotal)}/month SIP
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 @[640px]/main:grid-cols-2">
+                        {/* Projection Chart */}
+                        <div className="h-[200px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={sipProjections.chartData} margin={{ left: 0, right: 5, top: 5, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                              <XAxis dataKey="year" fontSize={10} tickFormatter={(v: number) => `${v}Y`} axisLine={false} tickLine={false} />
+                              <YAxis fontSize={9} tickFormatter={(v: number) => fmtCompact(v)} axisLine={false} tickLine={false} />
+                              <Tooltip
+                                formatter={(value: number, name: string) => [fmt(value), name === "invested" ? "Invested" : "Projected"]}
+                                labelFormatter={(label: number) => `Year ${label}`}
+                              />
+                              <Area type="monotone" dataKey="invested" name="Invested" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} strokeWidth={1.5} />
+                              <Area type="monotone" dataKey="projected" name="Projected" stroke={COLORS.emerald} fill={COLORS.emerald} fillOpacity={0.15} strokeWidth={2} />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Projection Table */}
+                        <div className="space-y-2">
+                          {sipProjections.projections.map((p) => (
+                            <div key={p.years} className="flex items-center justify-between rounded-lg border border-border/50 px-3 py-2">
+                              <div>
+                                <div className="text-sm font-medium">{p.years} Years</div>
+                                <div className="text-[10px] text-muted-foreground">Invested: {fmt(p.invested)}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-bold tabular-nums text-emerald-600">{fmt(p.projected)}</div>
+                                <div className="text-[10px] text-emerald-600">+{fmt(p.returns)} ({p.returnPct.toFixed(0)}%)</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* SIP Deduction Matching */}
+                {(sipMatches.length > 0 || unmatchedGrowwTxns.length > 0) && (
+                  <Card className="border border-border/70">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <IconWallet className="size-4" /> SIP Deduction Matching
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Bank transactions matched to registered SIPs ({sipMatches.length} matched, {unmatchedGrowwTxns.length} unmatched)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {sipMatches.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-2">Matched Deductions</div>
+                          <div className="space-y-1.5">
+                            {sipMatches.slice(0, 10).map((m, i) => (
+                              <div key={i} className="flex items-center justify-between rounded-lg border border-emerald-200/60 bg-emerald-50/30 dark:bg-emerald-950/10 px-3 py-2">
+                                <div>
+                                  <div className="text-xs font-medium max-w-[260px] truncate">{m.sipName}</div>
+                                  <div className="text-[10px] text-muted-foreground">{m.bankTxn.date} - {m.bankTxn.description.slice(0, 40)}</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xs font-semibold tabular-nums">{fmt(m.bankTxn.amount)}</div>
+                                  <Badge variant="outline" className="text-[9px] text-emerald-600 border-emerald-200">
+                                    matched
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {unmatchedGrowwTxns.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-2">Unmatched Groww Transactions</div>
+                          <div className="space-y-1.5">
+                            {unmatchedGrowwTxns.slice(0, 8).map((txn, i) => (
+                              <div key={i} className="flex items-center justify-between rounded-lg border border-amber-200/60 bg-amber-50/30 dark:bg-amber-950/10 px-3 py-2">
+                                <div>
+                                  <div className="text-xs text-muted-foreground">{txn.date}</div>
+                                  <div className="text-[10px] text-muted-foreground max-w-[300px] truncate">{txn.description}</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-xs font-semibold tabular-nums">{fmt(txn.amount)}</div>
+                                  <Badge variant="outline" className="text-[9px] text-amber-600 border-amber-200">
+                                    unmatched
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
                   </Card>
                 )}
               </TabsContent>

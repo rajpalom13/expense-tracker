@@ -19,6 +19,7 @@ function ensureDate(date: Date | string): Date {
 export interface AccountSummary {
   currentBalance: number;
   startingBalance: number;
+  openingBalance: number;
   netChange: number;
 }
 
@@ -35,6 +36,7 @@ export function calculateAccountSummary(transactions: Transaction[]): AccountSum
     return {
       currentBalance: 0,
       startingBalance: 0,
+      openingBalance: 0,
       netChange: 0
     };
   }
@@ -48,13 +50,30 @@ export function calculateAccountSummary(transactions: Transaction[]): AccountSum
   const firstTransaction = sorted[0];
   const lastTransaction = sorted[sorted.length - 1];
 
-  const firstBalance = firstTransaction?.balance || 0;
-  const lastBalance = lastTransaction?.balance || 0;
+  const firstBalance = Number(firstTransaction?.balance ?? 0);
+  const lastBalance = Number(lastTransaction?.balance ?? 0);
+
+  // Calculate the true opening balance (before the first transaction)
+  // openingBalance = firstTransaction.balance + debit - credit
+  // i.e. reverse the first transaction to get the balance before it
+  let openingBalance = firstBalance;
+  if (firstTransaction) {
+    const amount = firstTransaction.amount ?? 0;
+    if (firstTransaction.type === 'income' || firstTransaction.type === 'refund') {
+      // Income increased the balance, so opening was lower
+      openingBalance = firstBalance - amount;
+    } else if (firstTransaction.type === 'expense' || firstTransaction.type === 'investment') {
+      // Expense decreased the balance, so opening was higher
+      openingBalance = firstBalance + amount;
+    }
+    // For transfers, balance change is ambiguous, keep as-is
+  }
 
   return {
     currentBalance: lastBalance,
     startingBalance: firstBalance,
-    netChange: lastBalance - firstBalance
+    openingBalance,
+    netChange: lastBalance - openingBalance
   };
 }
 
