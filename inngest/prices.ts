@@ -148,6 +148,16 @@ export const refreshPrices = inngest.createFunction(
       });
     });
 
+    if (results.stocksUpdated > 0 || results.fundsUpdated > 0) {
+      await step.sendEvent('notify-prices-updated', {
+        name: 'finance/prices.updated',
+        data: {
+          stocksUpdated: results.stocksUpdated,
+          fundsUpdated: results.fundsUpdated,
+        },
+      });
+    }
+
     return results;
   }
 );

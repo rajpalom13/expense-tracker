@@ -120,7 +120,7 @@ export const syncTransactions = inngest.createFunction(
           startedAt: startedAt.toISOString(),
           finishedAt: new Date().toISOString(),
         });
-        return { skipped: true, count: 0 };
+        return { skipped: true as const, count: 0, userIds: [] as string[] };
       }
 
       const users = await db.collection('users').find({}).project({ _id: 1 }).toArray();
@@ -147,8 +147,18 @@ export const syncTransactions = inngest.createFunction(
         durationMs: finishedAt.getTime() - startedAt.getTime(),
       });
 
-      return { skipped: false, count: transactions.length, persisted: totalPersisted };
+      return { skipped: false as const, count: transactions.length, persisted: totalPersisted, userIds };
     });
+
+    if (!result.skipped && result.count > 0) {
+      await step.sendEvent('notify-sync-completed', {
+        name: 'finance/sync.completed',
+        data: {
+          userIds: result.userIds,
+          transactionCount: result.count,
+        },
+      });
+    }
 
     return result;
   }
