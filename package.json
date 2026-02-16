@@ -36,6 +36,7 @@
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.6.0",
     "googleapis": "^170.1.0",
+    "inngest": "^3.52.0",
     "jsonwebtoken": "^9.0.3",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.563.0",
