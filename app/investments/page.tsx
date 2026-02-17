@@ -1022,6 +1022,10 @@ export default function InvestmentsPage() {
             {/* ══════════════════════════════════════════════════════════════
                 SECTION 1: Portfolio Hero
             ══════════════════════════════════════════════════════════════ */}
+            {isLoading ? (
+              <InvestmentsLoadingSkeleton />
+            ) : (
+            <>
             <motion.div variants={stagger} initial="hidden" animate="show" className="grid gap-4 @[640px]/main:grid-cols-2 @[1200px]/main:grid-cols-12">
               {/* Main portfolio card - spans wider */}
               <motion.div variants={fadeUp} className="@[1200px]/main:col-span-4">
@@ -1039,23 +1043,23 @@ export default function InvestmentsPage() {
                         {portfolioTotal.pl >= 0 ? <IconArrowUp className="size-3.5" /> : <IconArrowDown className="size-3.5" />}
                         {fmt(portfolioTotal.pl)}
                       </span>
-                      <Badge variant="outline" className={`text-[10px] font-semibold ${portfolioTotal.plPercent >= 0 ? "text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-500/5" : "text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800 bg-rose-500/5"}`}>
+                      <Badge variant="outline" className={`text-[11px] font-semibold ${portfolioTotal.plPercent >= 0 ? "text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-500/5" : "text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800 bg-rose-500/5"}`}>
                         {portfolioTotal.plPercent >= 0 ? "+" : ""}{portfolioTotal.plPercent.toFixed(2)}%
                       </Badge>
                     </div>
                     <div className="mt-4 grid grid-cols-3 gap-3 border-t border-border/40 pt-3">
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Invested</div>
+                        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Invested</div>
                         <div className="text-sm font-semibold tabular-nums">{fmt(portfolioTotal.invested)}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Day Change</div>
+                        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Day Change</div>
                         <div className={`text-sm font-semibold tabular-nums ${dayChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                           {dayChange >= 0 ? "+" : ""}{fmt(dayChange)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">XIRR</div>
+                        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">XIRR</div>
                         <div className={`text-sm font-semibold tabular-nums ${(portfolioXIRR || 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                           {portfolioXIRR !== null ? `${portfolioXIRR >= 0 ? "+" : ""}${portfolioXIRR.toFixed(1)}%` : <span className="text-muted-foreground text-xs">N/A</span>}
                         </div>
@@ -1071,7 +1075,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated h-full">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Stocks</span>
+                        <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">Stocks</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10">
                           <IconChartLine className="size-3.5 text-indigo-500" />
                         </div>
@@ -1088,7 +1092,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated h-full">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Mutual Funds</span>
+                        <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">Mutual Funds</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
                           <IconChartBar className="size-3.5 text-amber-500" />
                         </div>
@@ -1105,7 +1109,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated h-full">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Monthly SIP</span>
+                        <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">Monthly SIP</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
                           <IconCoin className="size-3.5 text-emerald-500" />
                         </div>
@@ -1119,7 +1123,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated h-full">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Realized P&L</span>
+                        <span className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">Realized P&L</span>
                         <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${realizedPL >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
                           <IconTrendingUp className={`size-3.5 ${realizedPL >= 0 ? "text-emerald-500" : "text-rose-500"}`} />
                         </div>
@@ -1186,7 +1190,7 @@ export default function InvestmentsPage() {
                               )
                             })}
                             <div className="rounded-lg bg-muted/40 px-2.5 py-2 mt-2">
-                              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Total Invested</div>
+                              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Total Invested</div>
                               <div className="text-sm font-semibold">{fmt(portfolioTotal.invested)}</div>
                             </div>
                           </div>
@@ -1209,7 +1213,7 @@ export default function InvestmentsPage() {
                                       <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: PIE_COLORS[i % PIE_COLORS.length], opacity: 0.7 }} />
                                     </div>
                                   </div>
-                                  <span className="text-[10px] font-medium text-muted-foreground tabular-nums w-10 text-right">{pct.toFixed(0)}%</span>
+                                  <span className="text-[11px] font-medium text-muted-foreground tabular-nums w-10 text-right">{pct.toFixed(0)}%</span>
                                 </div>
                               )
                             })}
@@ -1250,7 +1254,7 @@ export default function InvestmentsPage() {
                                     <span className={`text-xs font-semibold tabular-nums ${isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                                       {isPositive ? "+" : ""}{fmt(entry.pl)}
                                     </span>
-                                    <span className={`text-[10px] tabular-nums font-medium px-1.5 py-0.5 rounded-md ${isPositive ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-rose-700 dark:text-rose-300 bg-rose-500/10"}`}>
+                                    <span className={`text-[11px] tabular-nums font-medium px-1.5 py-0.5 rounded-md ${isPositive ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-rose-700 dark:text-rose-300 bg-rose-500/10"}`}>
                                       {isPositive ? "+" : ""}{entry.plPct}%
                                     </span>
                                   </div>
@@ -1337,7 +1341,7 @@ export default function InvestmentsPage() {
                                 <div key={d.name} className="flex items-center gap-1.5">
                                   <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[(i + 2) % PIE_COLORS.length] }} />
                                   <span className="text-xs truncate flex-1">{d.name}</span>
-                                  <span className="text-[10px] font-medium text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
+                                  <span className="text-[11px] font-medium text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
                                 </div>
                               )
                             })}
@@ -1348,6 +1352,8 @@ export default function InvestmentsPage() {
                   )}
                 </motion.div>
               </motion.div>
+            )}
+            </>
             )}
 
             {/* CRUD Error Banner */}
@@ -1528,7 +1534,7 @@ export default function InvestmentsPage() {
                           <div key={e.symbol} className="flex items-center justify-between rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 hover:bg-muted/30 transition-colors">
                             <div>
                               <div className="text-sm font-semibold">{e.symbol}</div>
-                              <div className="text-[10px] text-muted-foreground">Buy: {fmtPrecise(e.buyValue)} → Sell: {fmtPrecise(e.sellValue)}</div>
+                              <div className="text-[11px] text-muted-foreground">Buy: {fmtPrecise(e.buyValue)} → Sell: {fmtPrecise(e.sellValue)}</div>
                             </div>
                             <span className={`text-xs font-semibold tabular-nums px-2 py-1 rounded-lg ${e.realizedPL >= 0 ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-rose-700 dark:text-rose-300 bg-rose-500/10"}`}>
                               {e.realizedPL >= 0 ? "+" : ""}{fmtPrecise(e.realizedPL)}
@@ -1624,7 +1630,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Invested</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Invested</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-500/10">
                           <IconArrowUp className="size-3.5 text-slate-500" />
                         </div>
@@ -1635,7 +1641,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current Value</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Current Value</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/10">
                           <IconChartBar className="size-3.5 text-indigo-500" />
                         </div>
@@ -1646,7 +1652,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Returns</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Returns</span>
                         <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${fundTotals.returns >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
                           <IconTrendingUp className={`size-3.5 ${fundTotals.returns >= 0 ? "text-emerald-500" : "text-rose-500"}`} />
                         </div>
@@ -1755,7 +1761,7 @@ export default function InvestmentsPage() {
                             <div>
                               <div className="text-sm font-medium max-w-[300px] truncate">{txn.schemeName}</div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                                <span className={`text-[10px] font-semibold px-1.5 py-0 rounded ${txn.transactionType === "PURCHASE" ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-rose-700 dark:text-rose-300 bg-rose-500/10"}`}>
+                                <span className={`text-[11px] font-semibold px-1.5 py-0 rounded ${txn.transactionType === "PURCHASE" ? "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10" : "text-rose-700 dark:text-rose-300 bg-rose-500/10"}`}>
                                   {txn.transactionType}
                                 </span>
                                 {txn.date}
@@ -1815,7 +1821,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Monthly Outflow</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Monthly Outflow</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/10">
                           <IconCoin className="size-3.5 text-violet-500" />
                         </div>
@@ -1826,7 +1832,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Yearly Outflow</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Yearly Outflow</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500/10">
                           <IconWallet className="size-3.5 text-orange-500" />
                         </div>
@@ -1837,7 +1843,7 @@ export default function InvestmentsPage() {
                   <Card className="card-elevated">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Active SIPs</span>
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Active SIPs</span>
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
                           <IconTrendingUp className="size-3.5 text-emerald-500" />
                         </div>
@@ -1956,11 +1962,11 @@ export default function InvestmentsPage() {
                             <div key={p.years} className="flex items-center justify-between rounded-xl bg-muted/20 border border-border/30 px-3.5 py-2.5 hover:bg-muted/30 transition-colors">
                               <div>
                                 <div className="text-sm font-semibold">{p.years} Years</div>
-                                <div className="text-[10px] text-muted-foreground">Invested: {fmt(p.invested)}</div>
+                                <div className="text-[11px] text-muted-foreground">Invested: {fmt(p.invested)}</div>
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{fmt(p.projected)}</div>
-                                <div className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">+{fmt(p.returns)} ({p.returnPct.toFixed(0)}%)</div>
+                                <div className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">+{fmt(p.returns)} ({p.returnPct.toFixed(0)}%)</div>
                               </div>
                             </div>
                           ))}
@@ -1995,7 +2001,7 @@ export default function InvestmentsPage() {
                               <div key={i} className="flex items-center justify-between rounded-xl border border-emerald-200/50 dark:border-emerald-800/30 bg-emerald-50/40 dark:bg-emerald-950/10 px-3.5 py-2.5">
                                 <div>
                                   <div className="text-xs font-semibold max-w-[260px] truncate">{m.sipName}</div>
-                                  <div className="text-[10px] text-muted-foreground mt-0.5">{m.bankTxn.date} - {m.bankTxn.description.slice(0, 40)}</div>
+                                  <div className="text-[11px] text-muted-foreground mt-0.5">{m.bankTxn.date} - {m.bankTxn.description.slice(0, 40)}</div>
                                 </div>
                                 <div className="text-right flex items-center gap-2">
                                   <div className="text-xs font-bold tabular-nums">{fmt(m.bankTxn.amount)}</div>
@@ -2016,7 +2022,7 @@ export default function InvestmentsPage() {
                               <div key={i} className="flex items-center justify-between rounded-xl border border-amber-200/50 dark:border-amber-800/30 bg-amber-50/40 dark:bg-amber-950/10 px-3.5 py-2.5">
                                 <div>
                                   <div className="text-xs text-muted-foreground">{txn.date}</div>
-                                  <div className="text-[10px] text-muted-foreground max-w-[300px] truncate mt-0.5">{txn.description}</div>
+                                  <div className="text-[11px] text-muted-foreground max-w-[300px] truncate mt-0.5">{txn.description}</div>
                                 </div>
                                 <div className="text-right flex items-center gap-2">
                                   <div className="text-xs font-bold tabular-nums">{fmt(txn.amount)}</div>
@@ -2111,5 +2117,102 @@ export default function InvestmentsPage() {
         </DialogContent>
       </Dialog>
     </SidebarProvider>
+  )
+}
+
+// ─── Loading Skeleton ───
+
+function InvestmentsLoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      {/* Portfolio Hero skeleton */}
+      <div className="grid gap-4 @[640px]/main:grid-cols-2 @[1200px]/main:grid-cols-12">
+        {/* Main portfolio card */}
+        <div className="@[1200px]/main:col-span-4">
+          <Card className="card-elevated @[1200px]/main:h-full">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Skeleton className="h-8 w-8 rounded-lg" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-9 w-44" />
+              <div className="mt-1.5 flex items-center gap-2">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3 border-t border-border/40 pt-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="space-y-1">
+                    <Skeleton className="h-2.5 w-14" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        {/* Quick metric tiles */}
+        <div className="@[1200px]/main:col-span-8 grid grid-cols-2 @[640px]/main:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="card-elevated h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <Skeleton className="h-2.5 w-16" />
+                  <Skeleton className="h-7 w-7 rounded-lg" />
+                </div>
+                <Skeleton className="mt-2 h-6 w-28" />
+                <Skeleton className="mt-1 h-3 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+      {/* Charts skeleton */}
+      <div className="grid gap-4 @[640px]/main:grid-cols-2 @[1200px]/main:grid-cols-12">
+        <div className="@[1200px]/main:col-span-4">
+          <Card className="card-elevated h-full">
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-7 w-7 rounded-lg" />
+                <div className="space-y-1">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-[140px] w-[140px] rounded-full flex-shrink-0" />
+                <div className="space-y-2.5 flex-1">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="space-y-1">
+                      <div className="flex justify-between">
+                        <Skeleton className="h-3 w-16" />
+                        <Skeleton className="h-3 w-8" />
+                      </div>
+                      <Skeleton className="h-1.5 w-full rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="@[1200px]/main:col-span-8 grid grid-cols-1 @[640px]/main:grid-cols-2 gap-4">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} className="card-elevated">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-7 w-7 rounded-lg" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+                <Skeleton className="h-[180px] w-full rounded-lg" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

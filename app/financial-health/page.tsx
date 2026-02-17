@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { motion } from "motion/react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -37,6 +38,11 @@ import {
   IconPencil,
   IconTrash,
   IconBuildingBank,
+  IconRobot,
+  IconPigMoney,
+  IconChartBar,
+  IconChecklist,
+  IconArrowRight,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -584,7 +590,7 @@ function NetWorthHero({
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Bank</p>
                 <p className="text-sm font-bold tabular-nums">{formatCurrency(bankBalance)}</p>
                 {totalAssets > 0 && (
-                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
                     {((bankBalance / totalAssets) * 100).toFixed(0)}% of assets
                   </p>
                 )}
@@ -593,7 +599,7 @@ function NetWorthHero({
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Investments</p>
                 <p className="text-sm font-bold tabular-nums text-emerald-600">{formatCurrency(investmentValue)}</p>
                 {totalAssets > 0 && (
-                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
                     {((investmentValue / totalAssets) * 100).toFixed(0)}% of assets
                   </p>
                 )}
@@ -602,7 +608,7 @@ function NetWorthHero({
                 <div className="rounded-lg bg-muted/30 p-3">
                   <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Debts</p>
                   <p className="text-sm font-bold tabular-nums text-rose-600">-{formatCurrency(totalDebts)}</p>
-                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
                     {totalAssets > 0 ? ((totalDebts / totalAssets) * 100).toFixed(0) : 0}% of assets
                   </p>
                 </div>
@@ -637,7 +643,7 @@ function NetWorthHero({
                       className="h-2 w-2 rounded-full"
                       style={{ backgroundColor: item.color }}
                     />
-                    <span className="text-[10px] text-muted-foreground">{item.name}</span>
+                    <span className="text-[11px] text-muted-foreground">{item.name}</span>
                   </div>
                 ))}
               </div>
@@ -1006,11 +1012,18 @@ function DebtTrackerSection() {
 
           {/* Debt list */}
           {debts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 py-10 px-4">
-              <IconCreditCard className="h-8 w-8 text-muted-foreground/40 mb-2" />
-              <p className="text-sm text-muted-foreground text-center">
-                No debts tracked yet. Add your loans and credit card balances to monitor them.
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/50 py-12 px-6 bg-gradient-to-br from-muted/20 via-transparent to-muted/10">
+              <div className="flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 mb-4">
+                <IconShieldCheck className="h-7 w-7 text-emerald-500" />
+              </div>
+              <h4 className="text-sm font-semibold text-foreground mb-1">Debt Free!</h4>
+              <p className="text-xs text-muted-foreground text-center max-w-xs mb-4">
+                No debts tracked. If you have any loans or credit card balances, add them here to monitor your payoff progress.
               </p>
+              <Button size="sm" variant="outline" onClick={() => setShowAddDebt(true)} className="gap-1.5">
+                <IconPlus className="h-3.5 w-3.5" />
+                Track a Debt
+              </Button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1032,11 +1045,11 @@ function DebtTrackerSection() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="text-sm font-semibold truncate">{debt.name}</h4>
-                          <Badge variant="outline" className="text-[10px] shrink-0">
+                          <Badge variant="outline" className="text-[11px] shrink-0">
                             {DEBT_TYPE_LABELS[debt.type] || debt.type}
                           </Badge>
                           {isClosed && (
-                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                            <Badge variant="secondary" className="text-[11px] shrink-0">
                               Closed
                             </Badge>
                           )}
@@ -1127,6 +1140,83 @@ function DebtTrackerSection() {
         isSubmitting={updateMutation.isPending}
       />
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Contextual CTAs based on health score
+// ---------------------------------------------------------------------------
+
+interface CtaAction {
+  label: string
+  href: string
+  icon: React.ElementType
+  variant: "default" | "outline"
+}
+
+function getCtaActions(score: number): { message: string; actions: CtaAction[] } {
+  if (score < 30) {
+    return {
+      message:
+        "Your score suggests focusing on building a solid financial foundation. Start with budgeting and setting clear savings goals.",
+      actions: [
+        { label: "Review Budget", href: "/budget", icon: IconWallet, variant: "default" },
+        { label: "Set Savings Goal", href: "/goals", icon: IconPigMoney, variant: "outline" },
+        { label: "Talk to AI Agent", href: "/agent", icon: IconRobot, variant: "outline" },
+      ],
+    }
+  }
+  if (score < 60) {
+    return {
+      message:
+        "You are making progress. Optimizing your budget and growing your investments can push your score higher.",
+      actions: [
+        { label: "Optimize Budget", href: "/budget", icon: IconWallet, variant: "default" },
+        { label: "Increase Investments", href: "/investments", icon: IconChartBar, variant: "outline" },
+        { label: "Review Goals", href: "/goals", icon: IconChecklist, variant: "outline" },
+      ],
+    }
+  }
+  return {
+    message:
+      "Great work! You are in a strong position. Consider diversifying investments or setting new stretch goals.",
+    actions: [
+      { label: "Explore Investments", href: "/investments", icon: IconChartBar, variant: "default" },
+      { label: "Set New Goals", href: "/goals", icon: IconTargetArrow, variant: "outline" },
+    ],
+  }
+}
+
+function ScoreCtaSection({ score }: { score: number }) {
+  const { message, actions } = getCtaActions(score)
+
+  return (
+    <motion.div variants={fadeUp}>
+      <div className="card-elevated rounded-xl p-5 md:p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <IconTargetArrow className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">Recommended Actions</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">{message}</p>
+        <div className="flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <Button
+              key={action.href + action.label}
+              variant={action.variant}
+              size="sm"
+              className="rounded-full gap-1.5"
+              asChild
+            >
+              <Link href={action.href}>
+                <action.icon className="h-3.5 w-3.5" />
+                {action.label}
+                <IconArrowRight className="h-3 w-3 opacity-60" />
+              </Link>
+            </Button>
+          ))}
+        </div>
+      </div>
+    </motion.div>
   )
 }
 
@@ -1439,6 +1529,11 @@ export default function FinancialHealthPage() {
                 </motion.div>
 
                 {/* --------------------------------------------------------- */}
+                {/* 2b. Contextual CTAs based on score                       */}
+                {/* --------------------------------------------------------- */}
+                <ScoreCtaSection score={metrics.financialFreedomScore} />
+
+                {/* --------------------------------------------------------- */}
                 {/* 3. Spending Trend + Income Profile                        */}
                 {/* --------------------------------------------------------- */}
                 <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-2">
@@ -1729,8 +1824,14 @@ export default function FinancialHealthPage() {
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="flex h-[260px] items-center justify-center rounded-lg border border-dashed border-border/50 text-sm text-muted-foreground">
-                      No net worth data available yet.
+                    <div className="flex h-[260px] flex-col items-center justify-center rounded-lg border border-dashed border-border/50 bg-gradient-to-br from-muted/20 via-transparent to-muted/10">
+                      <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-muted/40 mb-3">
+                        <IconChartLine className="h-6 w-6 text-muted-foreground/40" />
+                      </div>
+                      <p className="text-sm font-medium text-muted-foreground">No net worth data yet</p>
+                      <p className="text-xs text-muted-foreground/60 mt-1 text-center max-w-xs">
+                        Your net worth timeline will appear here once you have transaction history across multiple months.
+                      </p>
                     </div>
                   )}
                 </motion.div>
@@ -1844,6 +1945,16 @@ export default function FinancialHealthPage() {
                         </span>
                       )}
                     </p>
+                    <div className="mt-4 pt-3 border-t border-border/40">
+                      <Link
+                        href="/goals"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline underline-offset-2 transition-colors"
+                      >
+                        <IconPigMoney className="h-3.5 w-3.5" />
+                        Set emergency fund goal
+                        <IconArrowRight className="h-3 w-3 opacity-60" />
+                      </Link>
+                    </div>
                   </div>
                 </motion.div>
 

@@ -31,6 +31,10 @@ import {
   IconDots,
   IconTrendingUp,
   IconRepeat,
+  IconDownload,
+  IconArrowsSort,
+  IconSortAscending,
+  IconSortDescending,
 } from "@tabler/icons-react"
 
 import { toast } from "sonner"
@@ -151,6 +155,16 @@ function getCategoryColor(category: string) {
   return CATEGORY_COLORS[category] || { bg: "bg-gray-100/70 dark:bg-gray-800/50", text: "text-gray-600 dark:text-gray-400", dot: "bg-gray-400" }
 }
 
+/** Display-only cleanup of bank-mangled merchant names */
+function cleanMerchantName(name: string): string {
+  if (!name) return name
+  return name
+    .replace(/\s*\|\s*/g, ' ')          // Remove pipe characters
+    .replace(/\s{2,}/g, ' ')            // Collapse multiple spaces
+    .replace(/[_]+/g, ' ')              // Replace underscores with spaces
+    .trim()
+}
+
 // Payment method icon helper
 function PaymentMethodIcon({ method, className = "size-3.5" }: { method: string; className?: string }) {
   switch (method) {
@@ -234,6 +248,10 @@ export default function TransactionsPage() {
   // Recurring transactions
   const [recurringMerchants, setRecurringMerchants] = useState<Set<string>>(new Set())
   const [showRecurringOnly, setShowRecurringOnly] = useState(false)
+
+  // Sort state
+  const [sortField, setSortField] = useState<"date" | "description" | "category" | "amount" | null>(null)
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   // Delete state
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
@@ -475,6 +493,17 @@ export default function TransactionsPage() {
     setEditCategory("")
   }
 
+  const toggleSort = (field: "date" | "description" | "category" | "amount") => {
+    if (sortField === field) {
+      if (sortDir === "desc") setSortDir("asc")
+      else { setSortField(null); setSortDir("desc") }
+    } else {
+      setSortField(field)
+      setSortDir("desc")
+    }
+    setCurrentPage(1)
+  }
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -711,10 +740,18 @@ export default function TransactionsPage() {
     })
   }, [transactions, searchQuery, filterType, showRecurringOnly, isRecurring])
 
-  const tableData = useMemo(
-    () => transformTransactionsForTable(filteredTransactions),
-    [filteredTransactions]
-  )
+  const tableData = useMemo(() => {
+    const data = transformTransactionsForTable(filteredTransactions)
+    if (!sortField) return data
+    return [...data].sort((a, b) => {
+      let cmp = 0
+      if (sortField === "date") cmp = a.date.localeCompare(b.date)
+      else if (sortField === "description") cmp = a.description.localeCompare(b.description)
+      else if (sortField === "category") cmp = a.category.localeCompare(b.category)
+      else if (sortField === "amount") cmp = a.amount - b.amount
+      return sortDir === "asc" ? cmp : -cmp
+    })
+  }, [filteredTransactions, sortField, sortDir])
 
   const totalPages = Math.ceil(tableData.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
@@ -928,12 +965,31 @@ export default function TransactionsPage() {
                         variant="outline"
                         size="sm"
                         className="h-8 gap-1.5 text-xs"
+                        onClick={() => {
+                          const params = new URLSearchParams()
+                          if (filterType !== "all") params.set("type", filterType)
+                          const url = `/api/reports/export${params.toString() ? `?${params}` : ""}`
+                          window.open(url, "_blank")
+                        }}
+                      >
+                        <IconDownload className="size-3.5" />
+                        <span className="hidden sm:inline">CSV</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Download CSV</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
                         onClick={() => setShowRules(true)}
                       >
                         <IconSettings className="size-3.5" />
                         <span className="hidden sm:inline">Rules</span>
                         {rules.length > 0 && (
-                          <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                          <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-primary/10 text-primary text-[11px] font-medium">
                             {rules.length}
                           </span>
                         )}
@@ -1034,8 +1090,8 @@ export default function TransactionsPage() {
               </AnimatePresence>
 
               {/* Transaction Table */}
-              <motion.div variants={fadeUp} className="card-elevated rounded-xl bg-card overflow-hidden">
-                <Table>
+              <motion.div variants={fadeUp} className="card-elevated rounded-xl bg-card overflow-x-auto">
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent border-b border-border/50">
                       <TableHead className="w-[40px] pl-4">
@@ -1046,16 +1102,34 @@ export default function TransactionsPage() {
                           }
                         </button>
                       </TableHead>
-                      <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[90px]">Date</TableHead>
-                      <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">Description</TableHead>
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 w-[90px]">
+                        <button onClick={() => toggleSort("date")} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                          Date
+                          {sortField === "date" ? (sortDir === "asc" ? <IconSortAscending className="size-3.5" /> : <IconSortDescending className="size-3.5" />) : <IconArrowsSort className="size-3.5 opacity-0 group-hover:opacity-40" />}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                        <button onClick={() => toggleSort("description")} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                          Description
+                          {sortField === "description" ? (sortDir === "asc" ? <IconSortAscending className="size-3.5" /> : <IconSortDescending className="size-3.5" />) : null}
+                        </button>
+                      </TableHead>
                       <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                         <span className="inline-flex items-center gap-1">
-                          Category
+                          <button onClick={() => toggleSort("category")} className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+                            Category
+                            {sortField === "category" ? (sortDir === "asc" ? <IconSortAscending className="size-3.5" /> : <IconSortDescending className="size-3.5" />) : null}
+                          </button>
                           <InfoTooltip text="Click a category badge to change it." iconClassName="h-3 w-3" />
                         </span>
                       </TableHead>
                       <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 hidden lg:table-cell">Method</TableHead>
-                      <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 pr-4">Amount</TableHead>
+                      <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 pr-4">
+                        <button onClick={() => toggleSort("amount")} className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto">
+                          Amount
+                          {sortField === "amount" ? (sortDir === "asc" ? <IconSortAscending className="size-3.5" /> : <IconSortDescending className="size-3.5" />) : null}
+                        </button>
+                      </TableHead>
                       <TableHead className="w-[40px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1070,12 +1144,12 @@ export default function TransactionsPage() {
                           <motion.tr
                             key={transaction.id}
                             {...listItem(i)}
-                            className={`group border-b border-border/20 transition-colors duration-150
+                            className={`group border-b border-border/20 transition-all duration-200
                               ${selectedIds.has(transaction.id)
-                                ? "bg-primary/[0.03]"
+                                ? "bg-primary/[0.04] shadow-sm"
                                 : isOutlier
-                                  ? "bg-amber-50/30 dark:bg-amber-950/10"
-                                  : "hover:bg-muted/40"
+                                  ? "bg-amber-50/30 dark:bg-amber-950/10 hover:bg-amber-50/50 dark:hover:bg-amber-950/20"
+                                  : "hover:bg-muted/50"
                               }`}
                           >
                             {/* Checkbox */}
@@ -1096,7 +1170,7 @@ export default function TransactionsPage() {
                                     timeZone: "Asia/Kolkata",
                                   })}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                                <span className="text-[11px] text-muted-foreground/60 tabular-nums">
                                   {new Date(transaction.date).toLocaleDateString("en-IN", {
                                     year: "numeric",
                                     timeZone: "Asia/Kolkata",
@@ -1111,17 +1185,17 @@ export default function TransactionsPage() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <div className="text-[13px] font-medium truncate cursor-default text-foreground">
-                                      {transaction.merchant || transaction.description}
+                                      {cleanMerchantName(transaction.merchant || transaction.description)}
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className="max-w-[400px]">
-                                    {transaction.merchant || transaction.description}
+                                    {cleanMerchantName(transaction.merchant || transaction.description)}
                                   </TooltipContent>
                                 </Tooltip>
                                 {transaction.merchant && (
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <div className="text-[11px] text-muted-foreground/60 truncate max-w-[320px] cursor-default mt-0.5">{transaction.description}</div>
+                                      <div className="text-[11px] text-muted-foreground/60 truncate max-w-[320px] cursor-default mt-0.5">{cleanMerchantName(transaction.description)}</div>
                                     </TooltipTrigger>
                                     <TooltipContent side="bottom" className="max-w-[400px]">
                                       {transaction.description}
@@ -1195,7 +1269,7 @@ export default function TransactionsPage() {
                                 {isRecurring(transaction) && (
                                   <Badge
                                     variant="outline"
-                                    className="text-[10px] px-1.5 py-0 border-violet-500/30 text-violet-600 dark:text-violet-400 bg-violet-500/5"
+                                    className="text-[11px] px-1.5 py-0 border-violet-500/30 text-violet-600 dark:text-violet-400 bg-violet-500/5"
                                   >
                                     Recurring
                                   </Badge>
@@ -1203,7 +1277,7 @@ export default function TransactionsPage() {
                                 {(isBigPurchase || (!isBigPurchase && isOutlier)) && (
                                   <Badge
                                     variant="outline"
-                                    className="text-[10px] px-1.5 py-0 border-amber-300/50 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30"
+                                    className="text-[11px] px-1.5 py-0 border-amber-300/50 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30"
                                   >
                                     {isBigPurchase ? "Big" : "High"}
                                   </Badge>
@@ -1211,8 +1285,8 @@ export default function TransactionsPage() {
                                 <span
                                   className={`text-[13px] font-semibold tabular-nums ${
                                     transaction.type === "income"
-                                      ? "text-primary"
-                                      : "text-foreground"
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-rose-600 dark:text-rose-400"
                                   }`}
                                 >
                                   {transaction.type === "income" ? "+" : "-"}
@@ -1596,7 +1670,7 @@ export default function TransactionsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <code className="text-xs bg-muted px-2 py-0.5 rounded-md font-mono border border-border/40">{rule.pattern}</code>
-                          <span className="text-[10px] text-muted-foreground/60">
+                          <span className="text-[11px] text-muted-foreground/60">
                             in {rule.matchField === "any" ? "any field" : rule.matchField}
                           </span>
                           <IconChevronRight className="size-3 text-muted-foreground/40" />

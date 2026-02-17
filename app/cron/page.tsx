@@ -215,7 +215,7 @@ export default function CronPage() {
                 {Object.entries(JOB_CONFIG).map(([key, config]) => {
                   const status = jobStatus[key]
                   return (
-                    <Card key={key} className="border border-border/70">
+                    <Card key={key} className="card-elevated">
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-base">{config.label}</CardTitle>
@@ -264,7 +264,7 @@ export default function CronPage() {
               </div>
 
               {/* Recent run history */}
-              <Card className="border border-border/70">
+              <Card className="card-elevated">
                 <CardHeader>
                   <CardTitle>Recent Runs</CardTitle>
                   <p className="text-sm text-muted-foreground">

@@ -1,4 +1,0 @@
-[     679ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/avatars/user.jpg:0
-[   55000ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/avatars/user.jpg:0
-[   57035ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/avatars/user.jpg:0
-[   58545ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/avatars/user.jpg:0

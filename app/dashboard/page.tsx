@@ -44,6 +44,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { AiInsightsWidget } from "@/components/ai-insights-widget"
 import { SyncButtonCompact } from "@/components/sync-button"
+import { RecurringTransactions } from "@/components/recurring-transactions"
 import { SectionErrorBoundary } from "@/components/error-boundary"
 import {
   SidebarInset,
@@ -329,18 +330,94 @@ export default function DashboardPage() {
                   return partialInfo.isPartial ? <ContextBanner variant="info" title={partialInfo.message} /> : null
                 })()}
 
-                {/* ─── Smart Daily Summary ─── */}
+                {/* ─── Daily Budget Pulse ─── */}
                 <motion.div
                   variants={fadeUpSmall}
-                  className="rounded-xl bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/10 px-4 py-3"
+                  className="rounded-2xl border border-white/10 bg-card/50 backdrop-blur-xl p-5 shadow-xl shadow-black/5"
                 >
-                  <p className="text-sm text-foreground/80">
-                    {dailySummary.todaySpent > 0 ? (
-                      <>Spent <strong className="text-foreground">{formatCurrency(dailySummary.todaySpent)}</strong> today{dailySummary.topCategory ? ` on ${dailySummary.topCategory}` : ""}. {formatCurrency(dailySummary.budgetRemaining)} remaining ({formatCurrency(dailySummary.dailyBudget)}/day for {dailySummary.remainingDays} days).</>
-                    ) : (
-                      <>No spending today. <strong>{formatCurrency(dailySummary.dailyBudget)}</strong>/day budget available for {dailySummary.remainingDays} days.</>
-                    )}
-                  </p>
+                  <div className="flex items-center gap-5">
+                    {/* Circular progress ring */}
+                    {(() => {
+                      const dailyLimit = dailySummary.dailyBudget + dailySummary.todaySpent / (dailySummary.remainingDays > 0 ? 1 : 1)
+                      const effectiveDailyLimit = totalIncome > 0
+                        ? totalIncome / new Date(year, month, 0).getDate()
+                        : 0
+                      const spentPct = effectiveDailyLimit > 0
+                        ? Math.min((dailySummary.todaySpent / effectiveDailyLimit) * 100, 100)
+                        : 0
+                      const ringSize = 72
+                      const strokeWidth = 6
+                      const radius = (ringSize - strokeWidth) / 2
+                      const circumference = 2 * Math.PI * radius
+                      const strokeDashoffset = circumference * (1 - spentPct / 100)
+                      const ringColor = spentPct >= 100
+                        ? "#f43f5e"
+                        : spentPct >= 80
+                          ? "#f59e0b"
+                          : "#10b981"
+
+                      return (
+                        <div className="relative shrink-0" style={{ width: ringSize, height: ringSize }}>
+                          <svg width={ringSize} height={ringSize} viewBox={`0 0 ${ringSize} ${ringSize}`}>
+                            <circle
+                              cx={ringSize / 2}
+                              cy={ringSize / 2}
+                              r={radius}
+                              fill="none"
+                              stroke="var(--border)"
+                              strokeWidth={strokeWidth}
+                              strokeOpacity={0.3}
+                            />
+                            <motion.circle
+                              cx={ringSize / 2}
+                              cy={ringSize / 2}
+                              r={radius}
+                              fill="none"
+                              stroke={ringColor}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              strokeDasharray={circumference}
+                              transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
+                              initial={{ strokeDashoffset: circumference }}
+                              animate={{ strokeDashoffset }}
+                              transition={{ delay: 0.3, duration: 0.8, ease: [0.25, 0.1, 0.25, 1] }}
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-sm font-bold tabular-nums" style={{ color: ringColor }}>
+                              {Math.round(spentPct)}%
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* Text details */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Today&apos;s Spending</p>
+                      <p className="text-lg font-bold tabular-nums text-foreground">
+                        {formatCurrency(dailySummary.todaySpent)}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {dailySummary.todaySpent > 0 && dailySummary.topCategory
+                          ? `Mostly on ${dailySummary.topCategory}`
+                          : "No spending recorded today"}
+                      </p>
+                    </div>
+
+                    {/* Right stats */}
+                    <div className="hidden sm:flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Daily Budget</p>
+                        <p className="text-sm font-semibold tabular-nums">{formatCurrency(dailySummary.dailyBudget)}</p>
+                      </div>
+                      <div className="h-8 w-px bg-border/40" />
+                      <div className="text-right">
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Days Left</p>
+                        <p className="text-sm font-semibold tabular-nums">{dailySummary.remainingDays}</p>
+                      </div>
+                    </div>
+                  </div>
                 </motion.div>
 
                 {/* ─── Stat Bar ─── */}
@@ -354,7 +431,7 @@ export default function DashboardPage() {
                       <motion.div
                         key={stat.key}
                         variants={fadeUpSmall}
-                        className="card-elevated rounded-xl bg-card p-4 flex items-start gap-3.5"
+                        className="card-elevated rounded-xl bg-card p-4 flex items-start gap-3.5 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20 hover:scale-[1.01]"
                       >
                         <div className={`flex items-center justify-center h-10 w-10 rounded-xl ${stat.iconBg} shrink-0`}>
                           <Icon className={`h-5 w-5 ${stat.iconColor}`} strokeWidth={1.8} />
@@ -376,10 +453,10 @@ export default function DashboardPage() {
                 </motion.div>
 
                 {/* ─── Predictive Cashflow ─── */}
-                <motion.div variants={fadeUp} className="card-elevated rounded-xl bg-card p-4">
+                <motion.div variants={fadeUp} className="card-elevated rounded-xl bg-card p-4 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/60">
-                      <IconTrendingUp className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-violet-500/15 to-pink-500/15">
+                      <IconTrendingUp className="h-4 w-4 text-violet-500" />
                     </div>
                     <h3 className="text-sm font-semibold">Cashflow Forecast</h3>
                   </div>
@@ -406,11 +483,11 @@ export default function DashboardPage() {
                 {/* ─── Main Row: Spending Breakdown + Monthly Summary ─── */}
                 <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-5">
                   {/* Spending Breakdown */}
-                  <div className="lg:col-span-3 card-elevated rounded-xl bg-card p-5">
+                  <div className="lg:col-span-3 card-elevated rounded-xl bg-card p-5 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
                     <div className="flex items-center justify-between mb-5">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/60">
-                          <IconChartBar className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500/15 to-purple-500/15">
+                          <IconChartBar className="h-4 w-4 text-blue-500" />
                         </div>
                         <h3 className="text-sm font-semibold">Spending Breakdown</h3>
                       </div>
@@ -465,10 +542,10 @@ export default function DashboardPage() {
                   </div>
 
                   {/* ─── Monthly Summary ─── */}
-                  <div className="lg:col-span-2 card-elevated rounded-xl bg-card p-5 flex flex-col">
+                  <div className="lg:col-span-2 card-elevated rounded-xl bg-card p-5 flex flex-col transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
                     <div className="flex items-center gap-2.5 mb-4">
-                      <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-muted/60">
-                        <IconReceipt className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500/15 to-cyan-500/15">
+                        <IconReceipt className="h-4 w-4 text-emerald-500" />
                       </div>
                       <h3 className="text-sm font-semibold">Balance Flow</h3>
                     </div>
@@ -548,8 +625,11 @@ export default function DashboardPage() {
                   </motion.div>
                 )}
 
+                {/* ─── Bottom 2-col grid: Transactions + Trend ─── */}
+                <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-2">
+
                 {/* ─── Recent Transactions ─── */}
-                <motion.div variants={fadeUp} className="card-elevated rounded-xl bg-card p-5">
+                <div className="card-elevated rounded-xl bg-card p-5 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold">Recent Transactions</h3>
                     <Link
@@ -579,7 +659,7 @@ export default function DashboardPage() {
                           >
                             <div className="flex items-center gap-3 min-w-0 flex-1">
                               <span className="text-sm font-medium truncate">{t.merchant || t.description}</span>
-                              <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 border border-border/40 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">
+                              <span className="text-[11px] font-medium text-muted-foreground bg-muted/60 border border-border/40 px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wide">
                                 {t.category}
                               </span>
                             </div>
@@ -596,10 +676,10 @@ export default function DashboardPage() {
                   ) : (
                     <p className="text-sm text-muted-foreground py-6 text-center">No transactions this month.</p>
                   )}
-                </motion.div>
+                </div>
 
                 {/* ─── Monthly Trend ─── */}
-                <motion.div variants={fadeUp}>
+                <div>
                   <SectionErrorBoundary name="monthly-trend">
                     <div className="card-elevated rounded-xl bg-card p-5">
                       <div className="flex items-center justify-between mb-1">
@@ -646,10 +726,16 @@ export default function DashboardPage() {
                       )}
                     </div>
                   </SectionErrorBoundary>
+                </div>
+
                 </motion.div>
 
-                {/* ─── AI Insights ─── */}
-                <motion.div variants={fadeUp}>
+                {/* ─── Bottom 2-col grid: Recurring + AI Insights ─── */}
+                <motion.div variants={fadeUp} className="grid gap-5 lg:grid-cols-2">
+                  <SectionErrorBoundary name="recurring-transactions">
+                    <RecurringTransactions compact />
+                  </SectionErrorBoundary>
+
                   <AiInsightsWidget compact />
                 </motion.div>
               </motion.div>

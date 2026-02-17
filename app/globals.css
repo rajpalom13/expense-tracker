@@ -85,11 +85,11 @@
 }
 
 .dark {
-  --background: oklch(0.14 0.008 75);
+  --background: oklch(0.13 0.008 75);
   --foreground: oklch(0.93 0.008 85);
-  --card: oklch(0.18 0.008 75);
+  --card: oklch(0.19 0.01 75);
   --card-foreground: oklch(0.93 0.008 85);
-  --popover: oklch(0.18 0.008 75);
+  --popover: oklch(0.19 0.01 75);
   --popover-foreground: oklch(0.93 0.008 85);
   --primary: oklch(0.60 0.11 145);
   --primary-foreground: oklch(0.14 0.008 75);
@@ -109,7 +109,7 @@
   --chart-3: oklch(0.62 0.10 70);
   --chart-4: oklch(0.52 0.10 255);
   --chart-5: oklch(0.55 0.12 30);
-  --sidebar: oklch(0.18 0.008 75);
+  --sidebar: oklch(0.16 0.008 75);
   --sidebar-foreground: oklch(0.93 0.008 85);
   --sidebar-primary: oklch(0.52 0.11 145);
   --sidebar-primary-foreground: oklch(0.93 0.008 85);
@@ -168,9 +168,9 @@
 }
 .dark .card-elevated {
   box-shadow:
-    0 0 0 1px oklch(1 0 0 / 6%),
-    0 1px 2px oklch(0 0 0 / 15%),
-    0 4px 16px oklch(0 0 0 / 10%);
+    0 0 0 1px oklch(1 0 0 / 8%),
+    0 1px 2px oklch(0 0 0 / 20%),
+    0 4px 16px oklch(0 0 0 / 12%);
 }
 
 /* Subtle hover lift for interactive cards */
@@ -190,6 +190,13 @@
     0 4px 20px oklch(0 0 0 / 20%),
     0 1px 3px oklch(0 0 0 / 15%);
 }
+
+/* ─── Semantic finance colors ─── */
+
+.text-income { color: oklch(0.55 0.17 155); }
+.dark .text-income { color: oklch(0.68 0.17 155); }
+.text-expense { color: oklch(0.58 0.19 15); }
+.dark .text-expense { color: oklch(0.68 0.17 15); }
 
 /* ─── Prose refinements for AI content ─── */
 

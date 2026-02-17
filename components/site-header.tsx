@@ -3,6 +3,8 @@
 import * as React from "react"
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler"
+import { CommandPalette } from "@/components/command-palette"
+import { NotificationCenter } from "@/components/notification-center"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
@@ -28,7 +30,7 @@ export function SiteHeader({
         <div className="flex flex-1 items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-baseline gap-2">
-              <h1 className="text-base font-semibold tracking-tight text-foreground truncate">
+              <h1 className="text-base font-bold tracking-tight text-foreground truncate">
                 {title}
               </h1>
               {subtitle && (
@@ -47,7 +49,9 @@ export function SiteHeader({
             )}
           </div>
           <div className="flex items-center gap-3">
+            <CommandPalette />
             {actions}
+            <NotificationCenter />
             <AnimatedThemeToggler />
           </div>
         </div>

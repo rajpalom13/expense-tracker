@@ -317,6 +317,20 @@ function HeroOrb() {
   )
 }
 
+/* ─── Strip markdown for preview text ─── */
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/`{1,3}[^`]*`{1,3}/g, (match) => match.replace(/`/g, ''))
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^[-*+]\s/gm, '')
+    .replace(/^\d+\.\s/gm, '')
+    .trim()
+}
+
 /* ─── Thread list item ─── */
 
 const ThreadItem = memo(function ThreadItem({
@@ -360,13 +374,13 @@ const ThreadItem = memo(function ThreadItem({
                 onDelete()
                 setConfirmDelete(false)
               }}
-              className="text-[10px] text-destructive hover:text-destructive/80 font-medium px-1"
+              className="text-[11px] text-destructive hover:text-destructive/80 font-medium px-1"
             >
               Delete
             </button>
             <button
               onClick={() => setConfirmDelete(false)}
-              className="text-[10px] text-muted-foreground hover:text-foreground px-1"
+              className="text-[11px] text-muted-foreground hover:text-foreground px-1"
             >
               Cancel
             </button>
@@ -384,9 +398,9 @@ const ThreadItem = memo(function ThreadItem({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground line-clamp-1">
-        {thread.preview}
+        {stripMarkdown(thread.preview)}
       </p>
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
         <span>{relativeDate}</span>
         <span className="text-muted-foreground/30">|</span>
         <span>{thread.messageCount} messages</span>
@@ -754,12 +768,12 @@ export default function AgentPage() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
+      <SidebarInset className="h-dvh overflow-hidden">
         <SiteHeader
           title="Finance Agent"
           subtitle="AI-powered financial advisor"
         />
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden min-h-0">
           {/* ═══════════════════════════════════════════════════════════ */}
           {/* DESKTOP THREAD SIDEBAR                                     */}
           {/* ═══════════════════════════════════════════════════════════ */}
@@ -894,6 +908,26 @@ export default function AgentPage() {
                     ))}
                   </div>
 
+                  {/* Suggested prompts */}
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2 w-full">
+                    {[
+                      "What are my top spending categories this month?",
+                      "Am I on track with my savings goals?",
+                      "How can I reduce my food spending?",
+                      "Give me a monthly financial summary",
+                      "What subscriptions should I review?",
+                      "How is my investment portfolio performing?",
+                    ].map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => sendMessage(prompt)}
+                        className="rounded-full border border-border/50 bg-card/60 px-3 py-1.5 text-[11px] text-muted-foreground transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-foreground"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+
                   {/* Input card */}
                   <div className="w-full mt-8">
                     <form onSubmit={handleSubmit}>
@@ -952,7 +986,7 @@ export default function AgentPage() {
               /* ═══════════════════════════════════════════════════════ */
               /* CHAT STATE                                             */
               /* ═══════════════════════════════════════════════════════ */
-              <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="relative flex flex-1 flex-col overflow-hidden">
                 {/* Chat header bar */}
                 <div className="flex items-center justify-between border-b border-border/40 bg-card/50 backdrop-blur-sm px-4 py-2 md:px-6">
                   <div className="flex items-center gap-2.5">
@@ -988,9 +1022,15 @@ export default function AgentPage() {
                       </button>
                     )}
                     <div className="relative">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-chart-2">
-                        <IconRobot className="h-3.5 w-3.5 text-white" />
-                      </div>
+                      {lottieData ? (
+                        <div className="h-8 w-8">
+                          <Lottie animationData={lottieData} loop autoplay className="h-full w-full" />
+                        </div>
+                      ) : (
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-chart-2">
+                          <IconRobot className="h-3.5 w-3.5 text-white" />
+                        </div>
+                      )}
                       <div
                         className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
                           isStreaming ? "bg-amber-400" : "bg-emerald-500"
@@ -1001,13 +1041,13 @@ export default function AgentPage() {
                       <p className="text-xs font-semibold leading-none">
                         Finance Agent
                       </p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {isStreaming ? "Thinking..." : "Ready"}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground/70 bg-muted/40 rounded-md px-2 py-0.5 tabular-nums">
+                    <span className="text-[11px] text-muted-foreground/70 bg-muted/40 rounded-md px-2 py-0.5 tabular-nums">
                       <IconMessageCircle className="inline h-3 w-3 mr-0.5 -mt-px" />
                       {messages.length}
                     </span>
@@ -1017,7 +1057,7 @@ export default function AgentPage() {
                       title="New chat"
                     >
                       <IconPlus className="h-3.5 w-3.5" />
-                      <span className="text-[10px] font-medium hidden sm:inline">New</span>
+                      <span className="text-[11px] font-medium hidden sm:inline">New</span>
                     </button>
                   </div>
                 </div>
@@ -1025,7 +1065,7 @@ export default function AgentPage() {
                 {/* Messages */}
                 <div
                   ref={scrollContainerRef}
-                  className="flex-1 overflow-y-auto px-4 py-4 space-y-4 md:px-6"
+                  className="flex-1 overflow-y-auto px-4 py-4 pb-24 space-y-4 md:px-6"
                 >
                   {messages.map((msg, idx) => (
                     <motion.div
@@ -1055,13 +1095,13 @@ export default function AgentPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input area */}
-                <div className="border-t border-border/40 bg-gradient-to-t from-background via-background to-background/80 px-4 py-3 md:px-6">
+                {/* Input area — floats over chat */}
+                <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-2 pt-6 md:px-6 bg-gradient-to-t from-background from-60% to-transparent pointer-events-none">
                   <form
                     onSubmit={handleSubmit}
-                    className="mx-auto flex max-w-3xl items-end gap-2"
+                    className="pointer-events-auto mx-auto flex max-w-3xl items-end gap-2"
                   >
-                    <div className="flex-1 relative rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm transition-all focus-within:border-primary/40 focus-within:shadow-sm">
+                    <div className="flex-1 relative rounded-full border border-border/40 bg-background/80 backdrop-blur-xl shadow-lg ring-1 ring-white/5 transition-all focus-within:border-primary/50 focus-within:shadow-primary/10 focus-within:ring-primary/10">
                       <textarea
                         ref={textareaRef}
                         value={input}
@@ -1077,7 +1117,7 @@ export default function AgentPage() {
                         }
                         disabled={isStreaming}
                         rows={1}
-                        className="w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/50 disabled:opacity-50"
+                        className="w-full resize-none rounded-full bg-transparent px-5 py-3 text-sm outline-none placeholder:text-muted-foreground/50 disabled:opacity-50"
                         style={{ minHeight: 44, maxHeight: 160 }}
                       />
                     </div>
@@ -1086,7 +1126,7 @@ export default function AgentPage() {
                       <button
                         type="button"
                         onClick={stopStreaming}
-                        className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl bg-destructive/90 text-destructive-foreground transition-all hover:bg-destructive"
+                        className="flex h-[44px] w-[44px] shrink-0 self-end items-center justify-center rounded-full bg-destructive/90 text-destructive-foreground shadow-lg transition-all hover:bg-destructive"
                       >
                         <IconPlayerStop className="h-4 w-4" />
                       </button>
@@ -1094,13 +1134,13 @@ export default function AgentPage() {
                       <button
                         type="submit"
                         disabled={!input.trim()}
-                        className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="flex h-[44px] w-[44px] shrink-0 self-end items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all hover:bg-primary/90 disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <IconSend2 className="h-4 w-4" />
                       </button>
                     )}
                   </form>
-                  <p className="text-center text-[10px] text-muted-foreground/40 mt-2">
+                  <p className="pointer-events-auto text-center text-[11px] text-muted-foreground/40 mt-1.5">
                     Responses are based on your financial data. Always verify
                     important decisions.
                   </p>

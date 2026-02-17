@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
-import { type Icon, IconChevronRight } from "@tabler/icons-react"
+import { type Icon, IconChevronRight, IconDashboard } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
 
 import {
@@ -74,14 +74,14 @@ function CollapsibleNavGroup({ group }: { group: NavGroup }) {
                     className={cn(
                       "absolute left-[11px] top-0 w-px",
                       isLast ? "h-[14px]" : "h-full",
-                      isActive ? "bg-primary/40" : "bg-border"
+                      isActive ? "bg-primary/40" : "bg-muted-foreground/20"
                     )}
                   />
                   {/* Tree connector — horizontal branch */}
                   <div
                     className={cn(
                       "absolute left-[11px] top-[14px] h-px w-2",
-                      isActive ? "bg-primary/40" : "bg-border"
+                      isActive ? "bg-primary/40" : "bg-muted-foreground/20"
                     )}
                   />
 
@@ -90,8 +90,8 @@ function CollapsibleNavGroup({ group }: { group: NavGroup }) {
                     className={cn(
                       "block rounded-md py-1 pl-6 pr-2.5 text-sm transition-colors duration-150",
                       isActive
-                        ? "font-medium text-primary"
-                        : "text-sidebar-foreground/50 hover:text-sidebar-foreground/80"
+                        ? "font-medium text-primary bg-primary/8"
+                        : "text-sidebar-foreground/50 hover:text-sidebar-foreground/80 hover:bg-sidebar-accent/50"
                     )}
                   >
                     {item.title}
@@ -106,10 +106,31 @@ function CollapsibleNavGroup({ group }: { group: NavGroup }) {
   )
 }
 
-export function NavMain({ groups }: { groups: NavGroup[] }) {
+export function NavMain({ groups, dashboardActive }: { groups: NavGroup[]; dashboardActive?: boolean }) {
   return (
     <SidebarGroup>
       <SidebarGroupContent className="space-y-1">
+        {/* Dashboard - standalone top item */}
+        <Link
+          href="/dashboard"
+          className={cn(
+            "group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors duration-150",
+            dashboardActive
+              ? "text-primary bg-primary/8"
+              : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+          )}
+        >
+          <IconDashboard
+            className={cn(
+              "h-4 w-4 shrink-0 transition-colors",
+              dashboardActive
+                ? "text-primary"
+                : "text-sidebar-foreground/40 group-hover:text-sidebar-foreground/60"
+            )}
+          />
+          <span>Dashboard</span>
+        </Link>
+
         {groups.map((group) => (
           <CollapsibleNavGroup key={group.label} group={group} />
         ))}

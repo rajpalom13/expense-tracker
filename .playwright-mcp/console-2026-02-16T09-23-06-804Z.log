@@ -1,5 +1,0 @@
-[   38390ms] [WARNING] [PostHog] Missing or placeholder NEXT_PUBLIC_POSTHOG_KEY - analytics disabled @ http://localhost:3001/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
-[  109918ms] [ERROR] Failed to load resource: the server responded with a status of 406 () @ https://baurjucvzdboavbcuxjh.supabase.co/rest/v1/team_members?select=team_id&user_id=eq.c7cf711d-3fb4-4f37-a2fa-bd7605fbeb0e:0
-[  110320ms] [ERROR] Failed to load resource: the server responded with a status of 406 () @ https://baurjucvzdboavbcuxjh.supabase.co/rest/v1/team_members?select=team_id&user_id=eq.c7cf711d-3fb4-4f37-a2fa-bd7605fbeb0e:0
-[  111492ms] [WARNING] You're attempting to animate multiple children within AnimatePresence, but its mode is set to "wait". This will lead to odd visual behaviour. @ http://localhost:3001/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
-[  111492ms] [WARNING] You're attempting to animate multiple children within AnimatePresence, but its mode is set to "wait". This will lead to odd visual behaviour. @ http://localhost:3001/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297

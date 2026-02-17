@@ -78,6 +78,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   calculateAllBudgetSpending,
   type BudgetPeriod,
   type BudgetSpending,
@@ -85,6 +92,7 @@ import {
 import { DEFAULT_BUDGETS } from "@/lib/budget-mapping"
 import { generateBudgetAlerts, type BudgetAlert } from "@/lib/budget-alerts"
 import { stagger, fadeUp, fadeUpSmall } from "@/lib/motion"
+import { BudgetSuggestions } from "@/components/planning/budget-suggestions"
 
 interface BudgetCategoryItem {
   id: string
@@ -683,46 +691,102 @@ export default function BudgetPage() {
 
   const isLoading = authLoading || transactionsLoading
 
-  if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Skeleton className="h-8 w-48" />
-      </div>
-    )
+  // Helper: get NWI bucket for a category (inline for useMemo below)
+  const getBucket = (categoryName: string): "needs" | "wants" | "investments" | "savings" | null => {
+    if (!nwiConfig) return null
+    for (const key of ["needs", "wants", "investments", "savings"] as const) {
+      if (nwiConfig[key]?.categories.includes(categoryName)) return key
+    }
+    return null
   }
 
-  if (!isAuthenticated) return null
+  // Compute Needs vs Wants usage for the summary bar
+  const nwiUsageSummary = useMemo(() => {
+    if (!nwiConfig || budgetSpending.length === 0) return null
+    const buckets = { needs: { budget: 0, spent: 0 }, wants: { budget: 0, spent: 0 }, investments: { budget: 0, spent: 0 }, savings: { budget: 0, spent: 0 } }
+    for (const item of budgetSpending) {
+      const bucket = getBucket(item.budgetCategory)
+      if (bucket) {
+        buckets[bucket].budget += item.monthlyBudget
+        buckets[bucket].spent += item.actualSpent
+      }
+    }
+    return buckets
+  }, [nwiConfig, budgetSpending]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const findCat = (name: string) => categories.find((c) => c.name === name)
-  const nwiTotal = nwiDraft.needs + nwiDraft.wants + nwiDraft.investments + nwiDraft.savings
+  // Budget dialogs (rendered outside shell to avoid nesting issues)
+  const budgetDialogs = (
+    <>
+      {/* Add Category Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) { setShowAddDialog(false); resetDialogState() } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Budget Category</DialogTitle>
+            <DialogDescription>Create a new budget category to track spending.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="add-name">Category Name</Label>
+              <Input id="add-name" placeholder="e.g. Subscriptions" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory() }} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-amount">Monthly Budget (INR)</Label>
+              <Input id="add-amount" type="number" placeholder="5000" value={newCategoryAmount} onChange={(e) => setNewCategoryAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory() }} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-desc">Description (optional)</Label>
+              <Input id="add-desc" placeholder="What this category covers..." value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} />
+            </div>
+            {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowAddDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
+            <Button onClick={handleAddCategory} disabled={dialogLoading}>{dialogLoading ? "Adding..." : "Add Category"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-  const attentionItems = [...budgetSpending]
-    .sort((a, b) => b.percentageUsed - a.percentageUsed)
-    .slice(0, 5)
+      {/* Rename Category Dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={(open) => { if (!open) { setShowRenameDialog(false); resetDialogState() } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Category</DialogTitle>
+            <DialogDescription>Rename &quot;{dialogTarget?.name}&quot; to a new name.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rename-name">New Name</Label>
+              <Input id="rename-name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleRenameCategory() }} autoFocus />
+            </div>
+            {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowRenameDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
+            <Button onClick={handleRenameCategory} disabled={dialogLoading}>{dialogLoading ? "Renaming..." : "Rename"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-  // Helper: get alert for a specific category
-  const getAlertForCategory = (categoryName: string) =>
-    alerts.find(a => a.category === categoryName)
+      {/* Delete Category Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={(open) => { if (!open) { setShowDeleteDialog(false); resetDialogState() } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Category</DialogTitle>
+            <DialogDescription>Are you sure you want to delete &quot;{dialogTarget?.name}&quot;? This action cannot be undone.</DialogDescription>
+          </DialogHeader>
+          {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteCategory} disabled={dialogLoading}>{dialogLoading ? "Deleting..." : "Delete"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 
-  // Month name helper for history tab
-  const getMonthLabel = (month: number, year: number) => {
-    const date = new Date(year, month - 1, 1)
-    return date.toLocaleDateString("en-US", { month: "short", year: "numeric" })
-  }
+  // ── Shell wrapper (sidebar + header) ──
 
-  // Adherence color for history
-  const getAdherenceColor = (pct: number) => {
-    if (pct > 100) return "text-destructive"
-    if (pct >= 80) return "text-amber-600 dark:text-amber-500"
-    return "text-primary"
-  }
-  const getAdherenceBg = (pct: number) => {
-    if (pct > 100) return "bg-destructive/[0.06]"
-    if (pct >= 80) return "bg-amber-500/[0.04]"
-    return ""
-  }
-
-  return (
+  const shell = (children: React.ReactNode) => (
     <SidebarProvider
       style={{
         "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -749,27 +813,99 @@ export default function BudgetPage() {
             </>
           }
         />
-        <div className="flex flex-1 flex-col">
-          {isLoading ? (
-            <BudgetLoadingSkeleton />
-          ) : (
-            <motion.div
-              className="space-y-4 p-4"
-              initial="hidden"
-              animate="show"
-              variants={stagger}
-            >
-              {/* ─── Tabs: Current / History ─── */}
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <motion.div variants={fadeUpSmall}>
-                  <TabsList>
-                    <TabsTrigger value="current">Current Month</TabsTrigger>
-                    <TabsTrigger value="history" className="gap-1.5">
-                      <IconHistory className="h-3.5 w-3.5" />
-                      History
-                    </TabsTrigger>
-                  </TabsList>
-                </motion.div>
+        {children}
+      </SidebarInset>
+      {budgetDialogs}
+    </SidebarProvider>
+  )
+
+  if (authLoading) {
+    return shell(
+      <div className="flex min-h-[200px] items-center justify-center">
+        <Skeleton className="h-8 w-48" />
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) return null
+
+  const findCat = (name: string) => categories.find((c) => c.name === name)
+  const nwiTotal = nwiDraft.needs + nwiDraft.wants + nwiDraft.investments + nwiDraft.savings
+
+  const attentionItems = [...budgetSpending]
+    .sort((a, b) => b.percentageUsed - a.percentageUsed)
+    .slice(0, 5)
+
+  // Helper: get alert for a specific category
+  const getAlertForCategory = (categoryName: string) =>
+    alerts.find(a => a.category === categoryName)
+
+  // Handler: reassign a category to a different NWI bucket
+  const handleChangeBucket = async (categoryName: string, newBucket: "needs" | "wants" | "investments" | "savings") => {
+    if (!nwiConfig) return
+    // Remove from old bucket, add to new
+    const updated = {
+      needs: { percentage: nwiDraft.needs, categories: nwiConfig.needs.categories.filter(c => c !== categoryName) },
+      wants: { percentage: nwiDraft.wants, categories: nwiConfig.wants.categories.filter(c => c !== categoryName) },
+      investments: { percentage: nwiDraft.investments, categories: nwiConfig.investments.categories.filter(c => c !== categoryName) },
+      savings: { percentage: nwiDraft.savings, categories: nwiConfig.savings?.categories.filter(c => c !== categoryName) || [] },
+    }
+    updated[newBucket].categories.push(categoryName)
+    try {
+      await updateNWIMutation.mutateAsync(updated)
+      setNwiConfig({
+        needs: updated.needs,
+        wants: updated.wants,
+        investments: updated.investments,
+        savings: updated.savings,
+      })
+      toast.success(`${categoryName} moved to ${BUCKET_CONFIG[newBucket].label}`)
+    } catch {
+      toast.error("Failed to update category type")
+    }
+  }
+
+  // Month name helper for history tab
+  const getMonthLabel = (month: number, year: number) => {
+    const date = new Date(year, month - 1, 1)
+    return date.toLocaleDateString("en-US", { month: "short", year: "numeric" })
+  }
+
+  // Adherence color for history
+  const getAdherenceColor = (pct: number) => {
+    if (pct > 100) return "text-destructive"
+    if (pct >= 80) return "text-amber-600 dark:text-amber-500"
+    return "text-primary"
+  }
+  const getAdherenceBg = (pct: number) => {
+    if (pct > 100) return "bg-destructive/[0.06]"
+    if (pct >= 80) return "bg-amber-500/[0.04]"
+    return ""
+  }
+
+  return shell(
+    <>
+      <div className="flex flex-1 flex-col">
+        {isLoading ? (
+          <BudgetLoadingSkeleton />
+        ) : (
+          <motion.div
+            className="space-y-4 p-4"
+            initial="hidden"
+            animate="show"
+            variants={stagger}
+          >
+            {/* ─── Tabs: Current / History ─── */}
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <motion.div variants={fadeUpSmall}>
+                <TabsList>
+                  <TabsTrigger value="current">Current Month</TabsTrigger>
+                  <TabsTrigger value="history" className="gap-1.5">
+                    <IconHistory className="h-3.5 w-3.5" />
+                    History
+                  </TabsTrigger>
+                </TabsList>
+              </motion.div>
 
                 <TabsContent value="current" className="space-y-4 mt-0">
 
@@ -848,7 +984,7 @@ export default function BudgetPage() {
                           {stat.value}
                         </p>
                         {stat.sub ? (
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{stat.sub}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{stat.sub}</p>
                         ) : (
                           <Progress
                             value={Math.min(totalPercentage, 100)}
@@ -933,7 +1069,7 @@ export default function BudgetPage() {
                                 <BucketIcon className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="text-xs font-semibold">{cfg.label}</span>
                               </div>
-                              <span className="text-[10px] text-muted-foreground tabular-nums">
+                              <span className="text-[11px] text-muted-foreground tabular-nums">
                                 {nwiConfig[key]?.categories.length ?? 0} cats
                               </span>
                             </div>
@@ -945,7 +1081,7 @@ export default function BudgetPage() {
                                   <span className={`text-sm font-semibold tabular-nums ${isOver ? "text-destructive" : ""}`}>
                                     {formatCurrency(actual)}
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                                  <span className="text-[11px] text-muted-foreground tabular-nums">
                                     / {formatCurrency(target)}
                                   </span>
                                 </div>
@@ -955,7 +1091,7 @@ export default function BudgetPage() {
                                     style={{ width: `${Math.min(usagePct, 100)}%` }}
                                   />
                                 </div>
-                                <p className="text-[10px] text-muted-foreground tabular-nums">
+                                <p className="text-[11px] text-muted-foreground tabular-nums">
                                   {actualPct.toFixed(1)}% of income
                                   <span className="text-muted-foreground/60"> (target {nwiDraft[key]}%)</span>
                                 </p>
@@ -997,12 +1133,12 @@ export default function BudgetPage() {
                               >
                                 <IconPlus className="h-3 w-3" />
                               </Button>
-                              <span className="text-[10px] font-medium text-muted-foreground ml-0.5 shrink-0 tabular-nums w-7 text-right">
+                              <span className="text-[11px] font-medium text-muted-foreground ml-0.5 shrink-0 tabular-nums w-7 text-right">
                                 {nwiDraft[key]}%
                               </span>
                             </div>
 
-                            <p className="text-[10px] text-muted-foreground/70">{cfg.desc}</p>
+                            <p className="text-[11px] text-muted-foreground/70">{cfg.desc}</p>
                           </div>
                         )
                       })}
@@ -1100,7 +1236,7 @@ export default function BudgetPage() {
                                 <span className="text-sm font-medium">{item.budgetCategory}</span>
                               </div>
                               {item.percentageUsed > 100 ? (
-                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4">Over</Badge>
+                                <Badge variant="destructive" className="text-[11px] px-1.5 py-0 h-4">Over</Badge>
                               ) : (
                                 <span className={`text-xs font-semibold tabular-nums ${getUsageColor(item.percentageUsed)}`}>
                                   {item.percentageUsed.toFixed(0)}%
@@ -1114,7 +1250,7 @@ export default function BudgetPage() {
                                 style={{ width: `${Math.min(item.percentageUsed, 100)}%` }}
                               />
                             </div>
-                            <p className="text-[10px] text-muted-foreground tabular-nums">
+                            <p className="text-[11px] text-muted-foreground tabular-nums">
                               {formatCurrency(item.actualSpent)}
                               <span className="text-muted-foreground/50"> / </span>
                               {formatCurrency(item.monthlyBudget)}
@@ -1127,28 +1263,84 @@ export default function BudgetPage() {
                 </div>
               </motion.div>
 
+              {/* ─── Needs vs Wants Usage ─── */}
+              {nwiUsageSummary && (
+                <motion.div initial={fadeUp.hidden} animate={fadeUp.show}>
+                  <div className="card-elevated rounded-xl bg-card p-5">
+                    <div className="flex items-center gap-1.5 mb-4">
+                      <h3 className="text-sm font-semibold">Needs vs Wants Usage</h3>
+                      <InfoTooltip text="Shows how much of your Needs and Wants budget has been spent this month. Based on category classifications in the table below." />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {(["needs", "wants", "investments", "savings"] as const).map((key) => {
+                        const cfg = BUCKET_CONFIG[key]
+                        const BIcon = cfg.icon
+                        const { budget, spent } = nwiUsageSummary[key]
+                        const pct = budget > 0 ? (spent / budget) * 100 : 0
+                        const left = budget - spent
+                        const isOver = left < 0
+                        return (
+                          <div key={key} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <BIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-xs font-semibold">{cfg.label}</span>
+                              </div>
+                              <span className={`text-[11px] font-semibold tabular-nums ${isOver ? "text-destructive" : pct >= 80 ? "text-amber-500" : "text-muted-foreground"}`}>
+                                {pct.toFixed(0)}%
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted/40 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ease-out ${
+                                  isOver ? "bg-destructive" : pct >= 80 ? "bg-amber-500" : "bg-primary"
+                                }`}
+                                style={{ width: `${Math.min(pct, 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground tabular-nums">
+                              <span>{formatCurrency(spent)} spent</span>
+                              <span className={isOver ? "text-destructive font-medium" : ""}>
+                                {isOver ? `-${formatCurrency(Math.abs(left))} over` : `${formatCurrency(left)} left`}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {/* ─── Category Breakdown Table ─── */}
               <motion.div initial={fadeUp.hidden} animate={fadeUp.show}>
-                <div className="card-elevated rounded-xl bg-card overflow-hidden">
+                <div className="card-elevated rounded-xl bg-card overflow-x-auto">
                   <div className="flex items-center justify-between px-5 py-4">
                     <div>
                       <h3 className="text-sm font-semibold">Category Breakdown</h3>
                       <p className="text-xs text-muted-foreground mt-0.5">Click edit to adjust a budget. Use + to add new categories.</p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs gap-1.5"
-                      onClick={() => { resetDialogState(); setShowAddDialog(true) }}
-                    >
-                      <IconPlus className="h-3.5 w-3.5" />
-                      Add
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <BudgetSuggestions
+                        currentBudgets={budgets}
+                        onApply={saveBudgets}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1.5"
+                        onClick={() => { resetDialogState(); setShowAddDialog(true) }}
+                      >
+                        <IconPlus className="h-3.5 w-3.5" />
+                        Add
+                      </Button>
+                    </div>
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow className="border-border/40 hover:bg-transparent">
                         <TableHead className="text-[11px] uppercase tracking-wider font-medium">Category</TableHead>
+                        <TableHead className="text-[11px] uppercase tracking-wider font-medium w-[100px]">Type</TableHead>
                         <TableHead className="text-right text-[11px] uppercase tracking-wider font-medium">Budget</TableHead>
                         <TableHead className="text-right text-[11px] uppercase tracking-wider font-medium">Spent</TableHead>
                         <TableHead className="text-right text-[11px] uppercase tracking-wider font-medium">Left</TableHead>
@@ -1192,9 +1384,29 @@ export default function BudgetPage() {
                                 )}
                               </div>
                               {isRollover && rolloverAmt > 0 && (
-                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                <p className="text-[11px] text-muted-foreground mt-0.5">
                                   Base: {formatCurrency(item.monthlyBudget)} + Rollover: {formatCurrency(rolloverAmt)} = {formatCurrency(effectiveBudget)}
                                 </p>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {nwiConfig ? (
+                                <Select
+                                  value={getBucket(item.budgetCategory) || ""}
+                                  onValueChange={(val) => handleChangeBucket(item.budgetCategory, val as "needs" | "wants" | "investments" | "savings")}
+                                >
+                                  <SelectTrigger className="h-6 w-[90px] text-[11px] px-2 border-0 bg-muted/40 hover:bg-muted/60">
+                                    <SelectValue placeholder="--" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="needs" className="text-xs">Needs</SelectItem>
+                                    <SelectItem value="wants" className="text-xs">Wants</SelectItem>
+                                    <SelectItem value="investments" className="text-xs">Invest</SelectItem>
+                                    <SelectItem value="savings" className="text-xs">Savings</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground">--</span>
                               )}
                             </TableCell>
                             <TableCell className="text-right tabular-nums text-sm">
@@ -1242,7 +1454,7 @@ export default function BudgetPage() {
                                     />
                                   </div>
                                   {effectivePct > 100 ? (
-                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Over</Badge>
+                                    <Badge variant="destructive" className="text-[11px] px-1.5 py-0 h-4 shrink-0">Over</Badge>
                                   ) : (
                                     <span className={`text-[11px] font-semibold w-9 text-right tabular-nums shrink-0 ${getUsageColor(effectivePct)}`}>
                                       {effectivePct.toFixed(0)}%
@@ -1257,7 +1469,7 @@ export default function BudgetPage() {
                                   checked={isRollover}
                                   onCheckedChange={(checked) => handleToggleRollover(item.budgetCategory, checked)}
                                 />
-                                <span className="text-[10px] text-muted-foreground hidden lg:inline">Rollover</span>
+                                <span className="text-[11px] text-muted-foreground hidden lg:inline">Rollover</span>
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1302,6 +1514,7 @@ export default function BudgetPage() {
                       })}
                       <TableRow className="border-t-2 border-border/60 font-semibold hover:bg-transparent">
                         <TableCell className="text-sm">Total</TableCell>
+                        <TableCell />
                         <TableCell className="text-right tabular-nums text-sm">{formatCurrency(totalMonthlyBudget)}</TableCell>
                         <TableCell className="text-right tabular-nums text-sm">{formatCurrency(totalSpent)}</TableCell>
                         <TableCell className={`text-right tabular-nums text-sm ${totalMonthlyBudget - totalSpent > 0 ? "text-primary" : "text-destructive"}`}>
@@ -1316,7 +1529,7 @@ export default function BudgetPage() {
                               />
                             </div>
                             {totalPercentage > 100 ? (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 shrink-0">Over</Badge>
+                              <Badge variant="destructive" className="text-[11px] px-1.5 py-0 h-4 shrink-0">Over</Badge>
                             ) : (
                               <span className={`text-[11px] font-semibold w-9 text-right tabular-nums shrink-0 ${getUsageColor(totalPercentage)}`}>
                                 {totalPercentage.toFixed(0)}%
@@ -1392,7 +1605,7 @@ export default function BudgetPage() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-semibold">{getMonthLabel(entry.month, entry.year)}</p>
-                                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
                                       {formatCurrency(entry.totals.totalSpent)} of {formatCurrency(entry.totals.totalBudget)}
                                     </p>
                                   </div>
@@ -1412,7 +1625,7 @@ export default function BudgetPage() {
                                     <span className={`text-sm font-semibold tabular-nums ${getAdherenceColor(adherencePct)}`}>
                                       {adherencePct.toFixed(0)}%
                                     </span>
-                                    <p className="text-[10px] text-muted-foreground">adherence</p>
+                                    <p className="text-[11px] text-muted-foreground">adherence</p>
                                   </div>
                                 </button>
                                 {isExpanded && (
@@ -1420,10 +1633,10 @@ export default function BudgetPage() {
                                     <Table>
                                       <TableHeader>
                                         <TableRow className="border-border/30 hover:bg-transparent">
-                                          <TableHead className="text-[10px] uppercase tracking-wider font-medium">Category</TableHead>
-                                          <TableHead className="text-right text-[10px] uppercase tracking-wider font-medium">Budget</TableHead>
-                                          <TableHead className="text-right text-[10px] uppercase tracking-wider font-medium">Spent</TableHead>
-                                          <TableHead className="w-[120px] text-[10px] uppercase tracking-wider font-medium">Usage</TableHead>
+                                          <TableHead className="text-[11px] uppercase tracking-wider font-medium">Category</TableHead>
+                                          <TableHead className="text-right text-[11px] uppercase tracking-wider font-medium">Budget</TableHead>
+                                          <TableHead className="text-right text-[11px] uppercase tracking-wider font-medium">Spent</TableHead>
+                                          <TableHead className="w-[120px] text-[11px] uppercase tracking-wider font-medium">Usage</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -1444,7 +1657,7 @@ export default function BudgetPage() {
                                                     style={{ width: `${Math.min(cat.percentage, 100)}%` }}
                                                   />
                                                 </div>
-                                                <span className={`text-[10px] font-semibold tabular-nums w-8 text-right ${getUsageColor(cat.percentage)}`}>
+                                                <span className={`text-[11px] font-semibold tabular-nums w-8 text-right ${getUsageColor(cat.percentage)}`}>
                                                   {cat.percentage.toFixed(0)}%
                                                 </span>
                                               </div>
@@ -1467,73 +1680,7 @@ export default function BudgetPage() {
             </motion.div>
           )}
         </div>
-      </SidebarInset>
-
-      {/* Add Category Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) { setShowAddDialog(false); resetDialogState() } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Budget Category</DialogTitle>
-            <DialogDescription>Create a new budget category to track spending.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="add-name">Category Name</Label>
-              <Input id="add-name" placeholder="e.g. Subscriptions" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory() }} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="add-amount">Monthly Budget (INR)</Label>
-              <Input id="add-amount" type="number" placeholder="5000" value={newCategoryAmount} onChange={(e) => setNewCategoryAmount(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleAddCategory() }} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="add-desc">Description (optional)</Label>
-              <Input id="add-desc" placeholder="What this category covers..." value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} />
-            </div>
-            {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowAddDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
-            <Button onClick={handleAddCategory} disabled={dialogLoading}>{dialogLoading ? "Adding..." : "Add Category"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Rename Category Dialog */}
-      <Dialog open={showRenameDialog} onOpenChange={(open) => { if (!open) { setShowRenameDialog(false); resetDialogState() } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename Category</DialogTitle>
-            <DialogDescription>Rename &quot;{dialogTarget?.name}&quot; to a new name.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="rename-name">New Name</Label>
-              <Input id="rename-name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleRenameCategory() }} autoFocus />
-            </div>
-            {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowRenameDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
-            <Button onClick={handleRenameCategory} disabled={dialogLoading}>{dialogLoading ? "Renaming..." : "Rename"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Category Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={(open) => { if (!open) { setShowDeleteDialog(false); resetDialogState() } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Category</DialogTitle>
-            <DialogDescription>Are you sure you want to delete &quot;{dialogTarget?.name}&quot;? This action cannot be undone.</DialogDescription>
-          </DialogHeader>
-          {dialogError && <p className="text-sm text-destructive">{dialogError}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); resetDialogState() }} disabled={dialogLoading}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteCategory} disabled={dialogLoading}>{dialogLoading ? "Deleting..." : "Delete"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </SidebarProvider>
+    </>
   )
 }
 

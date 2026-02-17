@@ -8,7 +8,7 @@ import { searchMarketContext } from './ai-search';
 import { calculateTax, getDefaultTaxConfig } from '@/lib/tax';
 import type { TaxConfig } from '@/lib/tax';
 import type { Transaction, TransactionCategory, TransactionType, PaymentMethod, TransactionStatus } from './types';
-import type { AiInsightType, AiAnalysisDoc, InsightSection, PipelineContext, PipelineOptions, PipelineResult } from './ai-types';
+import type { AiInsightType, AiAnalysisDoc, InsightSection, PipelineContext, PipelineOptions, PipelineResult, TaxTipData, SpendingAnalysisData, MonthlyBudgetData, WeeklyBudgetData, InvestmentInsightsData, PlannerRecommendationData } from './ai-types';
 import type { Document } from 'mongodb';
 
 const STALENESS_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -57,6 +57,7 @@ export async function getCachedAnalysis(
     type: doc.type as AiInsightType,
     content: doc.content as string,
     sections: (doc.sections as InsightSection[] | undefined) || undefined,
+    structuredData: (doc.structuredData as Record<string, unknown> | undefined) || undefined,
     generatedAt: doc.generatedAt as string,
     dataPoints: doc.dataPoints as number,
     searchContext: doc.searchContext as AiAnalysisDoc['searchContext'],
@@ -217,6 +218,62 @@ async function collectUserData(
     }
   }
 
+  // Fetch planner data for planner_recommendation insights
+  let plannerContext = '';
+  if (type === 'planner_recommendation') {
+    const planDoc = await db.collection('finance_plans').findOne({ userId });
+    if (planDoc) {
+      const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+      const income = Number(planDoc.monthlyIncome) || 0;
+      const planNeeds = Number(planDoc.needs) || 0;
+      const planWants = Number(planDoc.wants) || 0;
+      const planSavings = Number(planDoc.savings) || 0;
+      const investments = planDoc.investments as Record<string, number> | undefined;
+      const totalInv = investments ? Object.values(investments).reduce((s: number, v: unknown) => s + (Number(v) || 0), 0) : 0;
+
+      const lines: string[] = [
+        `## Financial Plan`,
+        `- Monthly Income: ${fmt(income)}`,
+        `- Needs: ${fmt(planNeeds)} (${income > 0 ? ((planNeeds / income) * 100).toFixed(1) : 0}%)`,
+        `- Wants: ${fmt(planWants)} (${income > 0 ? ((planWants / income) * 100).toFixed(1) : 0}%)`,
+        `- Savings: ${fmt(planSavings)} (${income > 0 ? ((planSavings / income) * 100).toFixed(1) : 0}%)`,
+        `- Investments: ${fmt(totalInv)} (${income > 0 ? ((totalInv / income) * 100).toFixed(1) : 0}%)`,
+      ];
+
+      if (investments) {
+        const invLines = Object.entries(investments)
+          .filter(([, v]) => Number(v) > 0)
+          .map(([k, v]) => `  - ${k}: ${fmt(Number(v))}`);
+        if (invLines.length > 0) {
+          lines.push(`- Investment Breakdown:`);
+          lines.push(...invLines);
+        }
+      }
+
+      const totalAllocated = planNeeds + planWants + planSavings + totalInv;
+      const unallocated = income - totalAllocated;
+      if (unallocated > 0) {
+        lines.push(`- Unallocated: ${fmt(unallocated)} (${((unallocated / income) * 100).toFixed(1)}%)`);
+      } else if (unallocated < 0) {
+        lines.push(`- Over-allocated by: ${fmt(Math.abs(unallocated))}`);
+      }
+
+      // Goal allocations from plan
+      const goalAllocations = planDoc.goalAllocations as Record<string, number> | undefined;
+      if (goalAllocations) {
+        const goalLines = Object.entries(goalAllocations)
+          .filter(([, v]) => Number(v) > 0)
+          .map(([name, v]) => `  - ${name}: ${fmt(Number(v))}/mo`);
+        if (goalLines.length > 0) {
+          lines.push(`- Goal Allocations from Savings:`);
+          lines.push(...goalLines);
+        }
+      }
+
+      plannerContext = lines.join('\n');
+    }
+  }
+
   // Fetch tax config for tax_optimization insights
   let taxContext = '';
   if (type === 'tax_optimization') {
@@ -342,6 +399,39 @@ async function collectUserData(
     );
 
     taxContext = taxLines.join('\n');
+
+    // Fetch recurring/subscription transactions for subscription analysis
+    const recurringTxns = await db
+      .collection('transactions')
+      .find({ userId, recurring: true, type: 'expense' })
+      .sort({ date: -1 })
+      .toArray();
+
+    if (recurringTxns.length > 0) {
+      // Group by merchant/description to identify subscriptions
+      const subscriptionMap = new Map<string, { total: number; count: number; latest: string }>();
+      for (const txn of recurringTxns) {
+        const key = (txn.merchant as string) || (txn.description as string) || 'Unknown';
+        const existing = subscriptionMap.get(key);
+        if (existing) {
+          existing.total += Number(txn.amount) || 0;
+          existing.count += 1;
+        } else {
+          subscriptionMap.set(key, {
+            total: Number(txn.amount) || 0,
+            count: 1,
+            latest: String(txn.date),
+          });
+        }
+      }
+
+      const subLines: string[] = [``, `### Recurring Subscriptions & Services`];
+      for (const [name, data] of subscriptionMap) {
+        const avg = Math.round(data.total / data.count);
+        subLines.push(`- ${name}: ~Rs.${avg.toLocaleString('en-IN')}/txn (${data.count} transactions, total Rs.${data.total.toLocaleString('en-IN')})`);
+      }
+      taxContext += '\n' + subLines.join('\n');
+    }
   }
 
   return {
@@ -357,27 +447,495 @@ async function collectUserData(
     stockSymbols,
     mutualFundNames,
     taxContext,
+    plannerContext,
   };
 }
 
 /**
- * Parse AI response as structured JSON sections.
- * Falls back gracefully if the response isn't valid JSON.
+ * Build backward-compatible InsightSection[] and markdown from TaxTipData.
  */
-function parseAiResponse(raw: string): { sections?: InsightSection[]; content: string } {
+function taxTipToSections(data: TaxTipData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'current_status',
+    title: 'Tax Status',
+    type: 'summary',
+    text: `Recommended regime: **${data.regime.recommended === 'old' ? 'Old' : 'New'}**. Old regime tax: ${fmt(data.regime.oldTax)}, New regime tax: ${fmt(data.regime.newTax)}. You save ${fmt(data.regime.savings)} with the ${data.regime.recommended} regime (effective rate: ${data.regime.effectiveRate.toFixed(1)}%).`,
+    severity: data.regime.savings > 0 ? 'positive' : 'neutral',
+  });
+
+  if (data.deductionUtilization.length > 0) {
+    sections.push({
+      id: 'deduction_utilization',
+      title: 'Deduction Utilization',
+      type: 'list',
+      items: data.deductionUtilization.map(
+        (d) => `**${d.section}** (${d.label}): ${fmt(d.used)} of ${fmt(d.limit)} used (${fmt(Math.max(0, d.limit - d.used))} remaining)`
+      ),
+      severity: data.deductionUtilization.some((d) => d.used < d.limit * 0.5) ? 'warning' : 'positive',
+    });
+  }
+
+  if (data.tips.length > 0) {
+    sections.push({
+      id: 'action_plan',
+      title: 'Tax-Saving Tips',
+      type: 'numbered_list',
+      items: data.tips.map(
+        (t) => `**${t.title}** — ${t.description} (saves ${fmt(t.savingAmount)}, Section ${t.section})`
+      ),
+      severity: 'positive',
+    });
+  }
+
+  if (data.subscriptions && data.subscriptions.length > 0) {
+    sections.push({
+      id: 'subscriptions',
+      title: 'Subscription Optimization',
+      type: 'list',
+      items: data.subscriptions.map(
+        (s) => `**${s.name}** (${s.domain}): ${fmt(s.monthlyCost)}/mo — ${s.suggestion}`
+      ),
+      severity: 'neutral',
+    });
+  }
+
+  sections.push({
+    id: 'total_savings',
+    title: 'Total Savings Potential',
+    type: 'highlight',
+    highlight: `You can save up to **${fmt(data.totalSavingPotential)}** in tax this year.`,
+    severity: 'positive',
+  });
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Build backward-compatible InsightSection[] and markdown from SpendingAnalysisData.
+ */
+function spendingToSections(data: SpendingAnalysisData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'overview',
+    title: 'Financial Health Overview',
+    type: 'summary',
+    text: `Health Score: **${data.healthScore}/100**. ${data.summary.verdict} Income: ${fmt(data.summary.income)}, Expenses: ${fmt(data.summary.expenses)}, Savings: ${fmt(data.summary.savings)} (${data.summary.savingsRate.toFixed(1)}%).`,
+    severity: data.healthScore >= 75 ? 'positive' : data.healthScore >= 50 ? 'warning' : 'critical',
+  });
+
+  if (data.topCategories.length > 0) {
+    sections.push({
+      id: 'spending_patterns',
+      title: 'Top Spending Categories',
+      type: 'list',
+      items: data.topCategories.map(
+        (c) => `**${c.name}**: ${fmt(c.amount)} (${c.percentage.toFixed(1)}%) — trend: ${c.trend}${c.suggestion ? `. ${c.suggestion}` : ''}`
+      ),
+      severity: 'neutral',
+    });
+  }
+
+  if (data.actionItems.length > 0) {
+    sections.push({
+      id: 'areas_to_optimize',
+      title: 'Action Items',
+      type: 'numbered_list',
+      items: data.actionItems.map(
+        (a) => `**${a.title}**: ${a.description} (impact: ${a.impact}, saves ~${fmt(a.savingAmount)}/mo)`
+      ),
+      severity: 'warning',
+    });
+  }
+
+  if (data.alerts.length > 0) {
+    sections.push({
+      id: 'risk_flags',
+      title: 'Alerts',
+      type: 'list',
+      items: data.alerts.map((a) => `[${a.type.toUpperCase()}] **${a.title}**: ${a.message}`),
+      severity: data.alerts.some((a) => a.type === 'critical') ? 'critical' : 'warning',
+    });
+  }
+
+  sections.push({
+    id: 'key_takeaway',
+    title: 'Key Insight',
+    type: 'highlight',
+    highlight: data.keyInsight,
+    severity: 'positive',
+  });
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Build backward-compatible InsightSection[] and markdown from MonthlyBudgetData.
+ */
+function monthlyBudgetToSections(data: MonthlyBudgetData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'budget_overview',
+    title: 'Monthly Budget Overview',
+    type: 'summary',
+    text: `Income: ${fmt(data.totalIncome)}, Budget: ${fmt(data.totalBudget)}, Surplus: ${fmt(data.surplus)}. Needs: ${data.needs.percentage.toFixed(0)}% | Wants: ${data.wants.percentage.toFixed(0)}% | Savings: ${data.savingsInvestments.percentage.toFixed(0)}%.`,
+    severity: data.surplus >= 0 ? 'positive' : 'critical',
+  });
+
+  const buckets = [
+    { label: 'Needs', bucket: data.needs },
+    { label: 'Wants', bucket: data.wants },
+    { label: 'Savings & Investments', bucket: data.savingsInvestments },
+  ];
+  for (const { label, bucket } of buckets) {
+    if (bucket.categories.length > 0) {
+      sections.push({
+        id: label.toLowerCase().replace(/\s+/g, '_'),
+        title: `${label} (${fmt(bucket.total)})`,
+        type: 'list',
+        items: bucket.categories.map(
+          (c) => `**${c.name}**: Budget ${fmt(c.budgeted)}, Actual ${fmt(c.actual)} — ${c.status.replace('_', ' ')}`
+        ),
+        severity: bucket.categories.some((c) => c.status === 'over') ? 'warning' : 'positive',
+      });
+    }
+  }
+
+  if (data.savingsOpportunities.length > 0) {
+    sections.push({
+      id: 'savings_opportunities',
+      title: 'Savings Opportunities',
+      type: 'numbered_list',
+      items: data.savingsOpportunities.map((o) => `**${o.title}**: ${o.description} (save ~${fmt(o.amount)}/mo)`),
+      severity: 'positive',
+    });
+  }
+
+  if (data.positiveNote) {
+    sections.push({ id: 'positive_note', title: 'Positive Note', type: 'highlight', highlight: data.positiveNote, severity: 'positive' });
+  }
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Build backward-compatible InsightSection[] and markdown from WeeklyBudgetData.
+ */
+function weeklyBudgetToSections(data: WeeklyBudgetData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'week_glance',
+    title: 'Week at a Glance',
+    type: 'summary',
+    text: `Target: ${fmt(data.weeklyTarget)}, Spent: ${fmt(data.spent)}, Remaining: ${fmt(data.remaining)}. Daily limit: ${fmt(data.dailyLimit)}. ${data.daysRemaining} days left. ${data.onTrack ? 'On track!' : 'Over budget — cut back.'}`,
+    severity: data.onTrack ? 'positive' : 'warning',
+  });
+
+  if (data.categories.length > 0) {
+    sections.push({
+      id: 'category_budgets',
+      title: 'Category Budgets',
+      type: 'list',
+      items: data.categories.map(
+        (c) => `**${c.name}**: ${fmt(c.spent)} of ${fmt(c.weeklyBudget)} (${fmt(c.remaining)} left) — ${c.status.replace('_', ' ')}`
+      ),
+      severity: data.categories.some((c) => c.status === 'over') ? 'warning' : 'neutral',
+    });
+  }
+
+  if (data.quickWins.length > 0) {
+    sections.push({
+      id: 'quick_wins',
+      title: 'Quick Wins',
+      type: 'numbered_list',
+      items: data.quickWins.map((q) => `**${q.title}**: ${q.description} (save ~${fmt(q.savingAmount)})`),
+      severity: 'positive',
+    });
+  }
+
+  if (data.weeklyRule) {
+    sections.push({ id: 'weekly_rule', title: 'Rule of the Week', type: 'highlight', highlight: data.weeklyRule, severity: 'neutral' });
+  }
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Build backward-compatible InsightSection[] and markdown from InvestmentInsightsData.
+ */
+function investmentToSections(data: InvestmentInsightsData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'portfolio_health',
+    title: 'Portfolio Health',
+    type: 'summary',
+    text: `Value: ${fmt(data.portfolioValue)}, Invested: ${fmt(data.totalInvested)}, Returns: ${fmt(data.totalReturns)} (${data.returnPercentage.toFixed(1)}%)${data.xirr != null ? `, XIRR: ${data.xirr.toFixed(1)}%` : ''}. ${data.verdict}`,
+    severity: data.returnPercentage >= 0 ? 'positive' : 'critical',
+  });
+
+  if (data.stocks.length > 0) {
+    sections.push({
+      id: 'stock_analysis',
+      title: 'Stock Analysis',
+      type: 'list',
+      items: data.stocks.map(
+        (s) => `**${s.symbol}** (${s.name}): ${fmt(s.currentValue)} (${s.returnPercentage >= 0 ? '+' : ''}${s.returnPercentage.toFixed(1)}%) — ${s.recommendation}`
+      ),
+      severity: 'neutral',
+    });
+  }
+
+  if (data.mutualFunds.length > 0) {
+    sections.push({
+      id: 'mf_review',
+      title: 'Mutual Fund Review',
+      type: 'list',
+      items: data.mutualFunds.map(
+        (f) => `**${f.name}**: ${fmt(f.currentValue)} (${f.returnPercentage >= 0 ? '+' : ''}${f.returnPercentage.toFixed(1)}%)${f.sipAmount > 0 ? `, SIP ${fmt(f.sipAmount)}/mo` : ''} — ${f.recommendation}`
+      ),
+      severity: 'neutral',
+    });
+  }
+
+  if (data.actionItems.length > 0) {
+    sections.push({
+      id: 'action_items',
+      title: 'Action Items',
+      type: 'numbered_list',
+      items: data.actionItems.map((a) => `**${a.title}**: ${a.description} (${a.priority} priority)`),
+      severity: 'warning',
+    });
+  }
+
+  if (data.goalAlignment) {
+    sections.push({ id: 'goal_alignment', title: 'Goal Alignment', type: 'highlight', highlight: data.goalAlignment, severity: 'positive' });
+  }
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Build backward-compatible InsightSection[] and markdown from PlannerRecommendationData.
+ */
+function plannerToSections(data: PlannerRecommendationData): { sections: InsightSection[]; content: string } {
+  const fmt = (n: number) => `Rs.${n.toLocaleString('en-IN')}`;
+  const sections: InsightSection[] = [];
+
+  sections.push({
+    id: 'plan_overview',
+    title: 'Plan Health',
+    type: 'summary',
+    text: `Plan Score: **${data.planScore}/100**. ${data.summary}`,
+    severity: data.planScore >= 75 ? 'positive' : data.planScore >= 50 ? 'warning' : 'critical',
+  });
+
+  sections.push({
+    id: 'allocation_review',
+    title: 'Allocation Review',
+    type: 'summary',
+    text: `Needs: **${data.allocationReview.needsPct.toFixed(0)}%** | Wants: **${data.allocationReview.wantsPct.toFixed(0)}%** | Investments: **${data.allocationReview.investmentsPct.toFixed(0)}%** | Savings: **${data.allocationReview.savingsPct.toFixed(0)}%**. ${data.allocationReview.verdict}`,
+    severity: data.allocationReview.severity,
+  });
+
+  if (data.planVsActual.length > 0) {
+    sections.push({
+      id: 'plan_vs_actual',
+      title: 'Plan vs Actual',
+      type: 'list',
+      items: data.planVsActual.map(
+        (p) => `**${p.category}**: Planned ${fmt(p.planned)}, Actual ${fmt(p.actual)} (${p.deviation >= 0 ? '+' : ''}${p.deviation.toFixed(0)}%) — ${p.status.replace('_', ' ')}`
+      ),
+      severity: data.planVsActual.some((p) => p.status === 'over') ? 'warning' : 'positive',
+    });
+  }
+
+  if (data.goalFeasibility.length > 0) {
+    sections.push({
+      id: 'goal_feasibility',
+      title: 'Goal Feasibility',
+      type: 'list',
+      items: data.goalFeasibility.map(
+        (g) => `**${g.goalName}**: ${fmt(g.currentAmount)} of ${fmt(g.targetAmount)} (${g.monthlySaving > 0 ? `${g.monthsToGoal} months at ${fmt(g.monthlySaving)}/mo` : 'no monthly saving'}) — ${g.feasible ? 'On track' : 'At risk'}. ${g.suggestion}`
+      ),
+      severity: data.goalFeasibility.some((g) => !g.feasible) ? 'warning' : 'positive',
+    });
+  }
+
+  if (data.recommendations.length > 0) {
+    sections.push({
+      id: 'recommendations',
+      title: 'Recommendations',
+      type: 'numbered_list',
+      items: data.recommendations.map(
+        (r) => `**${r.title}**: ${r.description} (${r.impact} impact)`
+      ),
+      severity: 'neutral',
+    });
+  }
+
+  sections.push({
+    id: 'key_takeaway',
+    title: 'Key Takeaway',
+    type: 'highlight',
+    highlight: data.keyTakeaway,
+    severity: 'positive',
+  });
+
+  return { sections, content: sectionsToMarkdown(sections) };
+}
+
+/**
+ * Convert InsightSection[] to markdown string.
+ */
+function sectionsToMarkdown(sections: InsightSection[]): string {
+  const lines: string[] = [];
+  for (const sec of sections) {
+    lines.push(`## ${sec.title}`);
+    if (sec.text) lines.push(sec.text);
+    if (sec.items) {
+      for (let i = 0; i < sec.items.length; i++) {
+        lines.push(sec.type === 'numbered_list' ? `${i + 1}. ${sec.items[i]}` : `- ${sec.items[i]}`);
+      }
+    }
+    if (sec.highlight) lines.push(`**${sec.highlight}**`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Try to extract a JSON object from a string that may contain surrounding text.
+ * Looks for the outermost { ... } pair.
+ */
+function extractJsonObject(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse AI response as structured JSON.
+ * Detects type-specific formats and falls back gracefully if the response isn't valid JSON.
+ */
+function parseAiResponse(raw: string): { sections?: InsightSection[]; content: string; structuredData?: Record<string, unknown> } {
   // Strip code fences if AI wrapped JSON in ```json ... ```
   let cleaned = raw.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
 
+  // Try direct parse first, then fall back to extracting JSON object from surrounding text
+  let parsed: Record<string, unknown> | null = null;
+
   try {
-    const parsed = JSON.parse(cleaned);
+    parsed = JSON.parse(cleaned);
+  } catch {
+    // Direct parse failed — try to extract JSON object from the response
+    const extracted = extractJsonObject(cleaned);
+    if (extracted) {
+      try {
+        parsed = JSON.parse(extracted);
+        console.warn('[AI Pipeline] JSON was embedded in text — extracted successfully');
+      } catch (e) {
+        console.warn('[AI Pipeline] Failed to parse extracted JSON:', (e as Error).message);
+      }
+    } else {
+      console.warn('[AI Pipeline] No JSON object found in AI response, falling back to markdown');
+    }
+  }
+
+  if (parsed) {
+    // Detect TaxTipData format
+    if (parsed.tips && parsed.regime) {
+      const taxData = parsed as unknown as TaxTipData;
+      const { sections, content } = taxTipToSections(taxData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Detect SpendingAnalysisData format
+    if (parsed.healthScore !== undefined && parsed.topCategories) {
+      const spendingData = parsed as unknown as SpendingAnalysisData;
+      const { sections, content } = spendingToSections(spendingData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Detect MonthlyBudgetData format
+    if (parsed.needs && parsed.wants && parsed.savingsInvestments) {
+      const budgetData = parsed as unknown as MonthlyBudgetData;
+      const { sections, content } = monthlyBudgetToSections(budgetData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Detect WeeklyBudgetData format
+    if (parsed.weeklyTarget !== undefined && parsed.dailyLimit !== undefined) {
+      const weeklyData = parsed as unknown as WeeklyBudgetData;
+      const { sections, content } = weeklyBudgetToSections(weeklyData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Detect InvestmentInsightsData format
+    if (parsed.portfolioValue !== undefined && parsed.diversification) {
+      const investData = parsed as unknown as InvestmentInsightsData;
+      const { sections, content } = investmentToSections(investData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Detect PlannerRecommendationData format
+    if (parsed.planScore !== undefined && parsed.allocationReview) {
+      const plannerData = parsed as unknown as PlannerRecommendationData;
+      const { sections, content } = plannerToSections(plannerData);
+      return { sections, content, structuredData: parsed };
+    }
+
+    // Generic sections format (legacy fallback)
     if (parsed.sections && Array.isArray(parsed.sections)) {
-      // Validate basic structure
-      const sections: InsightSection[] = parsed.sections
-        .filter((s: Record<string, unknown>) => s.id && s.title && s.type)
-        .map((s: Record<string, unknown>) => ({
+      const sections: InsightSection[] = (parsed.sections as Record<string, unknown>[])
+        .filter((s) => s.id && s.title && s.type)
+        .map((s) => ({
           id: String(s.id),
           title: String(s.title),
           type: String(s.type) as InsightSection['type'],
@@ -389,24 +947,10 @@ function parseAiResponse(raw: string): { sections?: InsightSection[]; content: s
             : undefined,
         }));
 
-      // Build a markdown fallback from sections for backward compat
-      const markdownLines: string[] = [];
-      for (const sec of sections) {
-        markdownLines.push(`## ${sec.title}`);
-        if (sec.text) markdownLines.push(sec.text);
-        if (sec.items) {
-          for (let i = 0; i < sec.items.length; i++) {
-            markdownLines.push(sec.type === 'numbered_list' ? `${i + 1}. ${sec.items[i]}` : `- ${sec.items[i]}`);
-          }
-        }
-        if (sec.highlight) markdownLines.push(`**${sec.highlight}**`);
-        markdownLines.push('');
-      }
-
-      return { sections, content: markdownLines.join('\n') };
+      return { sections, content: sectionsToMarkdown(sections) };
     }
-  } catch {
-    // Not valid JSON — treat as plain markdown
+
+    console.warn('[AI Pipeline] Parsed JSON but could not detect any known format');
   }
 
   return { content: raw };
@@ -419,7 +963,8 @@ async function persistAnalysis(
   content: string,
   dataPoints: number,
   sections?: InsightSection[],
-  searchContext?: { queries: string[]; snippetCount: number }
+  searchContext?: { queries: string[]; snippetCount: number },
+  structuredData?: Record<string, unknown>
 ): Promise<void> {
   const db = await getMongoDb();
   const now = new Date().toISOString();
@@ -429,6 +974,7 @@ async function persistAnalysis(
     type,
     content,
     sections: sections || null,
+    structuredData: structuredData || null,
     generatedAt: now,
     dataPoints,
     searchContext: searchContext || null,
@@ -462,6 +1008,7 @@ export async function runAiPipeline(
       return {
         content: cached.content,
         sections: cached.sections,
+        structuredData: cached.structuredData,
         generatedAt: cached.generatedAt,
         dataPoints: cached.dataPoints,
         fromCache: true,
@@ -474,7 +1021,7 @@ export async function runAiPipeline(
   // Stage 1: Collect
   const ctx = await collectUserData(userId, type);
 
-  if (ctx.transactionCount === 0 && type !== 'investment_insights' && type !== 'tax_optimization') {
+  if (ctx.transactionCount === 0 && type !== 'investment_insights' && type !== 'tax_optimization' && type !== 'planner_recommendation') {
     throw new Error('No transaction data available. Please sync first.');
   }
 
@@ -502,14 +1049,15 @@ export async function runAiPipeline(
   );
 
   // Parse structured JSON (falls back to markdown if AI didn't return JSON)
-  const { sections, content } = parseAiResponse(rawContent);
+  const { sections, content, structuredData } = parseAiResponse(rawContent);
 
   // Stage 5: Persist
-  await persistAnalysis(userId, type, content, ctx.transactionCount, sections, searchContext);
+  await persistAnalysis(userId, type, content, ctx.transactionCount, sections, searchContext, structuredData);
 
   return {
     content,
     sections,
+    structuredData,
     generatedAt: new Date().toISOString(),
     dataPoints: ctx.transactionCount,
     fromCache: false,

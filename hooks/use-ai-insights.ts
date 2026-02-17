@@ -7,6 +7,7 @@ interface InsightResponse {
   success: boolean
   content?: string
   sections?: InsightSection[] | null
+  structuredData?: Record<string, unknown> | null
   generatedAt?: string
   dataPoints?: number
   fromCache?: boolean
@@ -19,6 +20,7 @@ interface InsightResponse {
 interface UseAiInsightReturn {
   content: string | null
   sections: InsightSection[] | null
+  structuredData: Record<string, unknown> | null
   generatedAt: string | null
   fromCache: boolean
   stale: boolean
@@ -78,6 +80,7 @@ export function useAiInsight(type: AiInsightType): UseAiInsightReturn {
   return {
     content: data?.content ?? null,
     sections: data?.sections ?? null,
+    structuredData: data?.structuredData ?? null,
     generatedAt: data?.generatedAt ?? null,
     fromCache: data?.fromCache ?? false,
     stale: data?.stale ?? false,

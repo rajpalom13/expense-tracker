@@ -78,6 +78,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { stagger, fadeUp, fadeUpSmall, scaleIn, numberPop, listItem } from "@/lib/motion"
+import { IncomeGoalTracker } from "@/components/wealth/income-goal-tracker"
 
 // ─── Types ───
 
@@ -762,6 +763,9 @@ export default function GoalsPage() {
                   </div>
                 </motion.div>
 
+                {/* ─── Income Goal Tracker ─── */}
+                <IncomeGoalTracker />
+
                 {/* ─── Tabs ─── */}
                 <motion.div variants={fadeUpSmall}>
                   <Tabs defaultValue="goals" className="space-y-5">
@@ -800,25 +804,42 @@ export default function GoalsPage() {
                       </div>
 
                       {goals.length === 0 ? (
-                        <div className="card-elevated rounded-xl bg-card">
-                          <div className="flex flex-col items-center justify-center py-20 text-center">
-                            <div className="mb-5 rounded-2xl bg-primary/5 p-4">
-                              <IconTarget className="h-10 w-10 text-primary/40" />
+                        <div className="card-elevated rounded-xl bg-card overflow-hidden">
+                          <div className="bg-gradient-to-br from-primary/5 via-blue-500/5 to-violet-500/5">
+                            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+                              <div className="relative mb-6">
+                                <div className="absolute inset-0 rounded-full bg-primary/10 blur-xl scale-150" />
+                                <div className="relative rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/10 p-5">
+                                  <IconTarget className="h-10 w-10 text-primary" />
+                                </div>
+                              </div>
+                              <h3 className="text-lg font-bold text-foreground">
+                                Set Your First Savings Goal
+                              </h3>
+                              <p className="mt-2 text-sm text-muted-foreground max-w-sm leading-relaxed">
+                                Whether it is an emergency fund, a dream vacation, or a down payment on a house -- set a target and track your progress month by month.
+                              </p>
+                              <div className="flex flex-wrap items-center justify-center gap-2 mt-4 mb-6">
+                                {["Emergency Fund", "Vacation", "House", "Car", "Education"].map((example) => {
+                                  const exConfig = getCategoryConfig(example)
+                                  const ExIcon = exConfig.icon
+                                  return (
+                                    <span key={example} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium ${exConfig.bg} ${exConfig.color}`}>
+                                      <ExIcon className="h-3 w-3" />
+                                      {example}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                              <Button
+                                onClick={openAddDialog}
+                                size="sm"
+                                className="gap-1.5"
+                              >
+                                <IconPlus className="h-4 w-4" />
+                                Create Your First Goal
+                              </Button>
                             </div>
-                            <p className="text-base font-semibold text-foreground">
-                              No savings goals yet
-                            </p>
-                            <p className="mt-1.5 text-sm text-muted-foreground max-w-xs">
-                              Create your first goal to start tracking progress toward your financial milestones
-                            </p>
-                            <Button
-                              onClick={openAddDialog}
-                              size="sm"
-                              className="mt-5 gap-1.5"
-                            >
-                              <IconPlus className="h-4 w-4" />
-                              Create Your First Goal
-                            </Button>
                           </div>
                         </div>
                       ) : (
@@ -843,7 +864,7 @@ export default function GoalsPage() {
                             return (
                               <div
                                 key={goal.id}
-                                className={`card-elevated rounded-xl bg-card overflow-hidden border border-border/60`}
+                                className="card-elevated rounded-xl bg-card overflow-hidden border border-border/60 transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/20"
                               >
                                 <div className="p-5">
                                   {/* Header */}
@@ -858,14 +879,14 @@ export default function GoalsPage() {
                                           {goal.category && (
                                             <Badge
                                               variant="secondary"
-                                              className={`text-[10px] px-1.5 py-0 font-medium ${config.bg} ${config.color} border-0`}
+                                              className={`text-[11px] px-1.5 py-0 font-medium ${config.bg} ${config.color} border-0`}
                                             >
                                               {goal.category}
                                             </Badge>
                                           )}
                                           <Badge
                                             variant="outline"
-                                            className={`text-[10px] px-2 py-0.5 font-medium ${
+                                            className={`text-[11px] px-2 py-0.5 font-medium ${
                                               goal.onTrack
                                                 ? "border-emerald-200 bg-emerald-500/10 text-emerald-700 dark:border-emerald-800 dark:text-emerald-400"
                                                 : "border-rose-200 bg-rose-500/10 text-rose-700 dark:border-rose-800 dark:text-rose-400"
@@ -880,7 +901,7 @@ export default function GoalsPage() {
                                           {hasLinkedConfig && (
                                             <Badge
                                               variant="outline"
-                                              className="text-[10px] px-1.5 py-0.5 font-medium border-blue-200 bg-blue-500/10 text-blue-700 dark:border-blue-800 dark:text-blue-400"
+                                              className="text-[11px] px-1.5 py-0.5 font-medium border-blue-200 bg-blue-500/10 text-blue-700 dark:border-blue-800 dark:text-blue-400"
                                             >
                                               <IconLink className="mr-0.5 h-3 w-3" /> Linked
                                             </Badge>
@@ -952,10 +973,44 @@ export default function GoalsPage() {
                                     </div>
                                   </div>
 
+                                  {/* Linear progress bar with gradient */}
+                                  <div className="mb-4">
+                                    <div className="h-2 w-full rounded-full bg-muted/50 overflow-hidden">
+                                      <motion.div
+                                        className="h-2 rounded-full"
+                                        style={{
+                                          background: `linear-gradient(90deg, ${
+                                            totalPct >= 100 ? '#10b981, #34d399'
+                                              : totalPct >= 50 ? '#3b82f6, #60a5fa'
+                                              : '#f59e0b, #fbbf24'
+                                          })`,
+                                        }}
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${Math.max(totalPct, 1)}%` }}
+                                        transition={{ delay: 0.2 + i * 0.05, duration: 0.6, ease: [0.25, 0.1, 0.25, 1] }}
+                                      />
+                                    </div>
+                                    {/* Time-based progress */}
+                                    {(() => {
+                                      const timeline = formatTimeline(goal.targetDate)
+                                      return timeline ? (
+                                        <div className="flex items-center justify-between mt-1.5">
+                                          <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1">
+                                            <IconClockHour4 className="h-3 w-3" />
+                                            {timeline} remaining
+                                          </span>
+                                          <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
+                                            {formatCurrency(goal.targetAmount - totalAmount)} to go
+                                          </span>
+                                        </div>
+                                      ) : null
+                                    })()}
+                                  </div>
+
                                   {/* Details grid */}
                                   <div className="grid grid-cols-2 gap-2 mb-4">
                                     <div className="rounded-lg bg-muted/40 px-3 py-2">
-                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Target Date</p>
+                                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Target Date</p>
                                       <p className="text-sm font-semibold mt-0.5 tabular-nums">
                                         {new Date(goal.targetDate).toLocaleDateString("en-IN", {
                                           month: "short",
@@ -964,7 +1019,7 @@ export default function GoalsPage() {
                                       </p>
                                     </div>
                                     <div className="rounded-lg bg-muted/40 px-3 py-2">
-                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Months Left</p>
+                                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Months Left</p>
                                       <p className="text-sm font-semibold mt-0.5 tabular-nums">
                                         {goal.monthsRemaining > 0
                                           ? `${goal.monthsRemaining}`
@@ -972,11 +1027,11 @@ export default function GoalsPage() {
                                       </p>
                                     </div>
                                     <div className="rounded-lg bg-muted/40 px-3 py-2">
-                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Required/mo</p>
+                                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Required/mo</p>
                                       <p className="text-sm font-semibold mt-0.5 tabular-nums">{formatCurrency(goal.requiredMonthly)}</p>
                                     </div>
                                     <div className="rounded-lg bg-muted/40 px-3 py-2">
-                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Projected</p>
+                                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Projected</p>
                                       <p className="text-sm font-semibold mt-0.5 tabular-nums">
                                         {goal.projectedCompletionDate
                                           ? new Date(goal.projectedCompletionDate).toLocaleDateString("en-IN", {

@@ -232,21 +232,21 @@ export default function WeeklyAnalyticsPage() {
                 />
 
                 <div className="grid gap-4 md:grid-cols-4">
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardContent className="p-4">
                       <p className="text-xs text-muted-foreground">Total Income</p>
                       <p className="text-2xl font-semibold text-emerald-600">{formatCurrency(weeklyMetrics.totalIncome)}</p>
                       <p className="text-xs text-muted-foreground">{weeklyMetrics.incomeTransactionCount} entries</p>
                     </CardContent>
                   </Card>
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardContent className="p-4">
                       <p className="text-xs text-muted-foreground">Total Expenses</p>
                       <p className="text-2xl font-semibold text-rose-600">{formatCurrency(weeklyMetrics.totalExpenses)}</p>
                       <p className="text-xs text-muted-foreground">{weeklyMetrics.expenseTransactionCount} entries</p>
                     </CardContent>
                   </Card>
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardContent className="p-4">
                       <p className="text-xs text-muted-foreground">Net Change</p>
                       <p className={`text-2xl font-semibold ${(weeklyMetrics.totalIncome - weeklyMetrics.totalExpenses) >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
@@ -255,7 +255,7 @@ export default function WeeklyAnalyticsPage() {
                       <p className="text-xs text-muted-foreground">Balance change this week</p>
                     </CardContent>
                   </Card>
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardContent className="p-4">
                       <p className="text-xs text-muted-foreground">Average Daily Spend</p>
                       <p className="text-2xl font-semibold">{formatCurrency(weeklyMetrics.averageDailySpend)}</p>
@@ -265,7 +265,7 @@ export default function WeeklyAnalyticsPage() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardHeader>
                       <CardTitle>Daily Breakdown</CardTitle>
                       <CardDescription>Income vs expenses by day</CardDescription>
@@ -293,7 +293,7 @@ export default function WeeklyAnalyticsPage() {
                       </ResponsiveContainer>
                     </CardContent>
                   </Card>
-                  <Card className="border border-border/70">
+                  <Card className="card-elevated">
                     <CardHeader>
                       <CardTitle>Top Categories</CardTitle>
                       <CardDescription>Highest weekly spend areas</CardDescription>
@@ -313,7 +313,7 @@ export default function WeeklyAnalyticsPage() {
                   </Card>
                 </div>
 
-                <Card className="border border-border/70">
+                <Card className="card-elevated">
                   <CardHeader>
                     <CardTitle>Top Expenses</CardTitle>
                     <CardDescription>Largest transactions this week</CardDescription>

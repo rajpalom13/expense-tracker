@@ -31,7 +31,6 @@ import {
   IconTrendingDown,
   IconArrowsExchange,
   IconChartLine,
-  IconFlame,
 } from "@tabler/icons-react"
 
 import { useTransactions } from "@/hooks/use-transactions"
@@ -62,7 +61,7 @@ import { MonthlySummaryCard } from "@/components/monthly-summary-card"
 import { WeeklyAnalyticsContent } from "@/components/weekly-analytics-content"
 import { CategoryChart } from "@/components/category-chart"
 import { PaymentMethodChart } from "@/components/payment-method-chart"
-import { SpendingHeatmap } from "@/components/spending-heatmap"
+import { SpendingComparison } from "@/components/spending-comparison"
 import {
   SidebarInset,
   SidebarProvider,
@@ -546,7 +545,7 @@ export default function AnalyticsPage() {
                       <motion.p variants={numberPop} className={`text-lg font-bold tabular-nums leading-tight truncate ${netChange >= 0 ? "text-primary" : "text-destructive"}`}>
                         {formatCurrency(closingBalance)}
                       </motion.p>
-                      <p className="text-[10px] text-muted-foreground/60 font-medium mt-0.5 leading-none">
+                      <p className="text-[11px] text-muted-foreground/60 font-medium mt-0.5 leading-none">
                         {netChange >= 0 ? "+" : ""}{formatCurrency(netChange)} this month
                       </p>
                     </div>
@@ -584,22 +583,6 @@ export default function AnalyticsPage() {
                     </Button>
                   </motion.div>
                 )}
-
-                {/* ── Spending Heatmap ── */}
-                <motion.div variants={fadeUpSmall}>
-                  <div className="card-elevated rounded-2xl bg-card p-5">
-                    <div className="mb-4 flex items-center gap-2">
-                      <IconFlame className="size-4 text-muted-foreground" />
-                      <div>
-                        <h3 className="text-sm font-semibold">Spending Heatmap</h3>
-                        <p className="text-xs text-muted-foreground/70 mt-0.5">Daily spending intensity over the last 3 months</p>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <SpendingHeatmap transactions={transactions} months={3} />
-                    </div>
-                  </div>
-                </motion.div>
 
                 {/* ── Tabs ── */}
                 <motion.div variants={fadeUp}>
@@ -1037,7 +1020,7 @@ export default function AnalyticsPage() {
                               Current year vs last year
                               {yoyGrowth.isAnnualized && (
                                 <>
-                                  <Badge variant="secondary" className="ml-2 text-[10px]">Annualized</Badge>
+                                  <Badge variant="secondary" className="ml-2 text-[11px]">Annualized</Badge>
                                   <InfoTooltip text="Since this year isn't over yet, we project totals to a full 12-month period for fair comparison." />
                                 </>
                               )}
@@ -1057,7 +1040,7 @@ export default function AnalyticsPage() {
                               </div>
                             ))}
                             {yoyGrowth.isAnnualized && (
-                              <p className="text-[10px] text-muted-foreground/60 pt-1">
+                              <p className="text-[11px] text-muted-foreground/60 pt-1">
                                 * Current year data projected to full year
                               </p>
                             )}
@@ -1127,6 +1110,11 @@ export default function AnalyticsPage() {
                       })()}
                     </TabsContent>
                   </Tabs>
+                </motion.div>
+
+                {/* ── Spending Comparison (standalone widget) ── */}
+                <motion.div variants={fadeUp}>
+                  <SpendingComparison transactions={transactions} />
                 </motion.div>
               </motion.div>
             )}

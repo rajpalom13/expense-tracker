@@ -61,7 +61,8 @@ import {
 import { InsightMarkdown } from "@/components/insight-markdown"
 import { formatINR, formatCompact, formatCompactAxis } from "@/lib/format"
 import { calculateTax, getDefaultTaxConfig, type TaxConfig, type TaxComparison } from "@/lib/tax"
-import { stagger, fadeUp, fadeUpSmall, scaleIn, numberPop } from "@/lib/motion"
+import { stagger, fadeUp, fadeUpSmall, scaleIn } from "@/lib/motion"
+import type { TaxTipData } from "@/lib/ai-types"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -345,40 +346,9 @@ export default function TaxPlannerPage() {
     { regime: "New Regime", tax: newTax.totalTax, fill: "var(--chart-2)" },
   ]
 
-  // ── Loading state ──
+  // ── Shell wrapper (sidebar + header) ──
 
-  if (authLoading || configLoading) {
-    return (
-      <SidebarProvider
-        style={{
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties}
-      >
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <SiteHeader title="Tax Planner" subtitle="FY 2025-26" />
-          <div className="flex flex-1 flex-col">
-            <div className="@container/main flex flex-1 flex-col gap-5 p-4 md:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 rounded-xl" />
-                ))}
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Skeleton className="h-96 rounded-xl" />
-                <Skeleton className="h-96 rounded-xl" />
-              </div>
-            </div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
-
-  if (!isAuthenticated) return null
-
-  return (
+  const shell = (children: React.ReactNode) => (
     <SidebarProvider
       style={{
         "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -393,7 +363,7 @@ export default function TaxPlannerPage() {
           actions={
             <div className="flex items-center gap-2">
               {saveMutation.isPending && (
-                <Badge variant="outline" className="text-[10px] animate-pulse">
+                <Badge variant="outline" className="text-[11px] animate-pulse">
                   Saving...
                 </Badge>
               )}
@@ -415,10 +385,37 @@ export default function TaxPlannerPage() {
             </div>
           }
         />
+        {children}
+      </SidebarInset>
+    </SidebarProvider>
+  )
 
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-6 p-4 md:p-6">
-          {/* ── Metric Tiles ── */}
+  // ── Loading state ──
+
+  if (authLoading || configLoading) {
+    return shell(
+      <div className="flex flex-1 flex-col">
+        <div className="@container/main flex flex-1 flex-col gap-5 p-4 md:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 rounded-xl" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Skeleton className="h-96 rounded-xl" />
+            <Skeleton className="h-96 rounded-xl" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) return null
+
+  return shell(
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-6 p-4 md:p-6">
+      {/* ── Metric Tiles ── */}
           <motion.div
             variants={stagger}
             initial="hidden"
@@ -429,6 +426,7 @@ export default function TaxPlannerPage() {
               <MetricTile
                 label="Gross Income"
                 value={formatINR(oldTax.grossTotalIncome)}
+                trendLabel={`~${formatCompact(Math.round(oldTax.grossTotalIncome / 12))}/mo`}
                 icon={<IconCash className="h-5 w-5" />}
                 tooltip="Salary + Other Income"
               />
@@ -467,7 +465,7 @@ export default function TaxPlannerPage() {
 
           {/* ── AI Tax Savings ── */}
           <motion.div variants={fadeUp}>
-            <Card>
+            <Card className="card-elevated">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -491,6 +489,164 @@ export default function TaxPlannerPage() {
                     <Skeleton className="h-4 w-3/4" />
                     <Skeleton className="h-4 w-1/2" />
                   </div>
+                ) : taxInsight.structuredData ? (
+                  (() => {
+                    const taxData = taxInsight.structuredData as unknown as TaxTipData
+                    return (
+                      <div className="space-y-4">
+                        {/* Hero banner */}
+                        <div className="relative rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 p-4">
+                          <div>
+                            <p className="text-2xl font-bold text-primary tabular-nums">
+                              {formatINR(taxData.totalSavingPotential)}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Total Tax Saving Potential
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="absolute top-3 right-3 text-[11px] bg-background/80 backdrop-blur-sm"
+                          >
+                            {taxData.regime.recommended === "new" ? "New" : "Old"} Regime Recommended
+                          </Badge>
+                        </div>
+
+                        {/* Deduction Utilization Progress Bars */}
+                        {taxData.deductionUtilization && taxData.deductionUtilization.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Deduction Utilization</p>
+                            <div className="grid grid-cols-2 gap-3">
+                              {taxData.deductionUtilization.map((item) => {
+                                const pct = item.limit > 0 ? (item.used / item.limit) * 100 : 0
+                                const barColor =
+                                  pct > 75
+                                    ? "[&>div]:bg-emerald-500"
+                                    : pct >= 25
+                                      ? "[&>div]:bg-amber-500"
+                                      : ""
+                                return (
+                                  <div key={item.section} className="space-y-1">
+                                    <p className="text-xs font-medium truncate">{item.label}</p>
+                                    <Progress value={Math.min(pct, 100)} className={`h-1.5 ${barColor}`} />
+                                    <p className="text-[11px] text-muted-foreground tabular-nums">
+                                      {formatINR(item.used)} of {formatINR(item.limit)}
+                                    </p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tips Cards */}
+                        {taxData.tips && taxData.tips.length > 0 && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Recommendations</p>
+                            <div className="space-y-2">
+                              {taxData.tips.map((tip, i) => (
+                                <div
+                                  key={i}
+                                  className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5 flex items-start justify-between gap-3"
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span
+                                        className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                                          tip.priority === "high"
+                                            ? "bg-red-500"
+                                            : tip.priority === "medium"
+                                              ? "bg-amber-500"
+                                              : "bg-emerald-500"
+                                        }`}
+                                      />
+                                      <p className="text-xs font-semibold truncate">{tip.title}</p>
+                                      {tip.section && (
+                                        <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5 flex-shrink-0">
+                                          {tip.section}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                      {tip.description}
+                                    </p>
+                                  </div>
+                                  {tip.savingAmount > 0 && (
+                                    <span className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap flex-shrink-0 tabular-nums">
+                                      {formatINR(tip.savingAmount)}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Subscriptions */}
+                        {taxData.subscriptions && taxData.subscriptions.length > 0 && (() => {
+                          const totalMonthly = taxData.subscriptions.reduce((s, sub) => s + sub.monthlyCost, 0)
+                          const totalAnnual = taxData.subscriptions.reduce((s, sub) => s + sub.annualCost, 0)
+                          return (
+                            <div>
+                              {/* Section header with totals */}
+                              <div className="flex items-end justify-between mb-3">
+                                <p className="text-xs font-semibold text-muted-foreground">Subscriptions</p>
+                                <div className="text-right">
+                                  <p className="text-sm font-bold tabular-nums">{formatINR(totalMonthly)}<span className="text-[11px] font-normal text-muted-foreground">/mo</span></p>
+                                  <p className="text-[11px] text-muted-foreground tabular-nums">{formatINR(totalAnnual)}/yr</p>
+                                </div>
+                              </div>
+
+                              {/* Subscription cards */}
+                              <div className="space-y-2">
+                                {taxData.subscriptions.map((sub, i) => (
+                                  <div
+                                    key={i}
+                                    className="group rounded-xl border border-border/40 bg-card/60 p-3 flex items-center gap-3 transition-colors hover:bg-card"
+                                  >
+                                    {/* Logo */}
+                                    <div className="flex-shrink-0 h-10 w-10 relative">
+                                      <img
+                                        src={`https://img.logo.dev/${sub.domain}?token=pk_a1V5q9A4TiOUjCQbz9ZXhQ&size=128&format=png`}
+                                        alt={sub.name}
+                                        className="h-10 w-10 rounded-xl object-contain bg-white p-0.5 shadow-sm ring-1 ring-border/20"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = "none"
+                                          const fallback = e.currentTarget.nextElementSibling as HTMLElement | null
+                                          if (fallback) fallback.style.display = "flex"
+                                        }}
+                                      />
+                                      <div
+                                        className="h-10 w-10 rounded-xl bg-primary/10 items-center justify-center text-sm font-bold text-primary absolute inset-0"
+                                        style={{ display: "none" }}
+                                      >
+                                        {sub.name.charAt(0).toUpperCase()}
+                                      </div>
+                                    </div>
+
+                                    {/* Name + suggestion */}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <p className="text-sm font-semibold truncate">{sub.name}</p>
+                                        <span className="text-[9px] text-muted-foreground/60 hidden sm:inline">{sub.domain}</span>
+                                      </div>
+                                      <p className="text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-1">{sub.suggestion}</p>
+                                    </div>
+
+                                    {/* Cost pill */}
+                                    <div className="flex-shrink-0 text-right">
+                                      <p className="text-sm font-bold tabular-nums">{formatINR(sub.monthlyCost)}</p>
+                                      <p className="text-[11px] text-muted-foreground tabular-nums">{formatINR(sub.annualCost)}/yr</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    )
+                  })()
                 ) : taxInsight.sections && taxInsight.sections.length > 0 ? (
                   <div className="space-y-3">
                     {taxInsight.sections.map((section) => (
@@ -542,7 +698,7 @@ export default function TaxPlannerPage() {
                 {/* ── Income Tab ── */}
                 <TabsContent value="income">
                   <motion.div variants={fadeUp} initial="hidden" animate="show">
-                    <Card>
+                    <Card className="card-elevated">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <IconCash className="h-4 w-4 text-primary" />
@@ -638,7 +794,7 @@ export default function TaxPlannerPage() {
                 {/* ── 80C Tab ── */}
                 <TabsContent value="80c">
                   <motion.div variants={fadeUp} initial="hidden" animate="show">
-                    <Card>
+                    <Card className="card-elevated">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <IconShieldCheck className="h-4 w-4 text-primary" />
@@ -794,7 +950,7 @@ export default function TaxPlannerPage() {
                 <TabsContent value="health">
                   <motion.div variants={fadeUp} initial="hidden" animate="show" className="space-y-6">
                     {/* 80D */}
-                    <Card>
+                    <Card className="card-elevated">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <IconHeartbeat className="h-4 w-4 text-primary" />
@@ -852,7 +1008,7 @@ export default function TaxPlannerPage() {
                     </Card>
 
                     {/* HRA */}
-                    <Card>
+                    <Card className="card-elevated">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <IconHomeDollar className="h-4 w-4 text-primary" />
@@ -924,7 +1080,7 @@ export default function TaxPlannerPage() {
                 {/* ── Other Deductions Tab ── */}
                 <TabsContent value="other">
                   <motion.div variants={fadeUp} initial="hidden" animate="show">
-                    <Card>
+                    <Card className="card-elevated">
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base">
                           <IconBuildingBank className="h-4 w-4 text-primary" />
@@ -974,7 +1130,7 @@ export default function TaxPlannerPage() {
             <div className="space-y-6">
               {/* Recommendation badge */}
               <motion.div variants={scaleIn} initial="hidden" animate="show">
-                <Card className="border-primary/30 bg-primary/5">
+                <Card className="card-elevated border-primary/30 bg-primary/5">
                   <CardContent className="p-4 text-center">
                     <div className="flex items-center justify-center gap-2 mb-1">
                       <IconCheck className="h-4 w-4 text-primary" />
@@ -994,7 +1150,7 @@ export default function TaxPlannerPage() {
 
               {/* Bar chart comparison */}
               <motion.div variants={fadeUp} initial="hidden" animate="show">
-                <Card>
+                <Card className="card-elevated">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Tax Comparison</CardTitle>
                   </CardHeader>
@@ -1040,16 +1196,16 @@ export default function TaxPlannerPage() {
 
               {/* Side-by-side breakdown */}
               <motion.div variants={fadeUp} initial="hidden" animate="show">
-                <Card>
+                <Card className="card-elevated">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Detailed Breakdown</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-0">
                     {/* Column headers */}
                     <div className="grid grid-cols-[1fr_auto_auto] gap-2 pb-2 mb-1 border-b border-border/50">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Item</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 w-24 text-right">Old</span>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 w-24 text-right">New</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">Item</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 w-24 text-right">Old</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 w-24 text-right">New</span>
                     </div>
                     <ComparisonRow label="Gross Income" old={oldTax.grossTotalIncome} new_={newTax.grossTotalIncome} />
                     <ComparisonRow label="Standard Deduction" old={oldTax.standardDeduction} new_={newTax.standardDeduction} />
@@ -1092,7 +1248,7 @@ export default function TaxPlannerPage() {
 
               {/* Slab-wise breakdown */}
               <motion.div variants={fadeUp} initial="hidden" animate="show">
-                <Card>
+                <Card className="card-elevated">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">Slab-wise Tax</CardTitle>
                   </CardHeader>
@@ -1121,11 +1277,9 @@ export default function TaxPlannerPage() {
                 </Card>
               </motion.div>
             </div>
-          </div>
-          </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+      </div>
+    </div>
   )
 }
 
@@ -1172,7 +1326,7 @@ function SlabRow({ slab, rate, tax }: { slab: string; rate: string; tax: number 
     <div className="flex items-center justify-between text-xs">
       <span className="text-muted-foreground">{slab}</span>
       <div className="flex items-center gap-4">
-        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+        <Badge variant="outline" className="text-[11px] px-1.5 py-0">
           {rate}
         </Badge>
         <span className="tabular-nums w-20 text-right font-medium">

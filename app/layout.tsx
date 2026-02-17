@@ -19,8 +19,13 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Finance Command Center",
-  description: "Professional finance dashboard powered by Google Sheets",
+  title: {
+    default: "Finance Command Center",
+    template: "%s | Finance Command Center",
+  },
+  description: "AI-powered personal finance dashboard with spending analysis, budgets, investments, and tax optimization",
+  keywords: ["finance", "budget", "investments", "tax", "spending analysis", "personal finance"],
+  robots: "noindex, nofollow",
 };
 
 export default function RootLayout({

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion } from "motion/react"
@@ -38,6 +38,9 @@ import {
   IconTrendingUp,
   IconBuildingBank,
   IconRefresh,
+  IconAlertTriangle,
+  IconCircleCheck,
+  IconAlertCircle,
 } from "@tabler/icons-react"
 
 import { toast } from "sonner"
@@ -51,7 +54,8 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Progress } from "@/components/ui/progress"
-import { InsightMarkdown } from "@/components/insight-markdown"
+import { useAiInsight } from "@/hooks/use-ai-insights"
+import type { PlannerRecommendationData } from "@/lib/ai-types"
 import { stagger, fadeUp, fadeUpSmall } from "@/lib/motion"
 import { formatINR, formatCompact } from "@/lib/format"
 
@@ -77,7 +81,6 @@ interface LinkedData {
   sips: { totalMonthly: number; count: number } | null
   stocks: { totalInvested: number; count: number } | null
   actualSpending: { monthlyIncome: number; monthlyExpenses: number; savingsRate: number } | null
-  aiRecommendation: { content: string; generatedAt: string } | null
 }
 
 const DEFAULT_INVESTMENT_TYPES = [
@@ -140,8 +143,63 @@ export default function PlannerPage() {
     sips: null,
     stocks: null,
     actualSpending: null,
-    aiRecommendation: null,
   })
+
+  // ─── Section Nav ───
+
+  const SECTION_NAV = useMemo(() => [
+    { id: "overview", label: "Overview" },
+    { id: "income-investments", label: "Income" },
+    { id: "allocation", label: "Allocation" },
+    { id: "what-if", label: "What-If" },
+    { id: "goals", label: "Goals" },
+    { id: "ai-analysis", label: "AI Analysis" },
+    { id: "portfolio-tips", label: "Portfolio" },
+  ], [])
+
+  const [activeSection, setActiveSection] = useState("overview")
+  const sectionRefs = useRef<Map<string, IntersectionObserverEntry>>(new Map())
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          sectionRefs.current.set(entry.target.id, entry)
+        }
+        // Find the topmost visible section
+        let topSection: string | null = null
+        let topY = Infinity
+        for (const [id, entry] of sectionRefs.current.entries()) {
+          if (entry.isIntersecting && entry.boundingClientRect.top < topY) {
+            topY = entry.boundingClientRect.top
+            topSection = id
+          }
+        }
+        if (topSection) setActiveSection(topSection)
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: 0 }
+    )
+
+    // Observe all sections after a short delay to let DOM render
+    const timer = setTimeout(() => {
+      for (const sec of SECTION_NAV) {
+        const el = document.getElementById(sec.id)
+        if (el) observer.observe(el)
+      }
+    }, 200)
+
+    return () => {
+      clearTimeout(timer)
+      observer.disconnect()
+    }
+  }, [SECTION_NAV])
+
+  const scrollToSection = useCallback((id: string) => {
+    const el = document.getElementById(id)
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }, [])
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) router.replace("/login")
@@ -396,25 +454,9 @@ export default function PlannerPage() {
     )
   }
 
-  // ─── Render ───
+  // ─── Shell wrapper (sidebar + header) ───
 
-  if (authLoading || loading) {
-    return (
-      <SidebarProvider style={{ "--sidebar-width": "calc(var(--spacing) * 72)", "--header-height": "calc(var(--spacing) * 12)" } as React.CSSProperties}>
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <SiteHeader title="Finance Planner" />
-          <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-            <div className="grid gap-4 md:grid-cols-4"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
-            <div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-72" /><Skeleton className="h-72" /></div>
-            <div className="grid gap-4 md:grid-cols-3"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
-
-  return (
+  const shell = (children: React.ReactNode) => (
     <SidebarProvider style={{ "--sidebar-width": "calc(var(--spacing) * 72)", "--header-height": "calc(var(--spacing) * 12)" } as React.CSSProperties}>
       <AppSidebar variant="inset" />
       <SidebarInset>
@@ -434,11 +476,48 @@ export default function PlannerPage() {
             </div>
           }
         />
-        <div className="flex flex-1 flex-col gap-5 p-4 md:p-6">
-          <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-5">
+        {children}
+      </SidebarInset>
+    </SidebarProvider>
+  )
 
-            {/* ─── Row 1: Quick Stats ─── */}
-            <motion.div variants={fadeUp} className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+  // ─── Render ───
+
+  if (authLoading || loading) {
+    return shell(
+      <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+        <div className="grid gap-4 md:grid-cols-4"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
+        <div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-72" /><Skeleton className="h-72" /></div>
+        <div className="grid gap-4 md:grid-cols-3"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div>
+      </div>
+    )
+  }
+
+  return shell(
+    <div className="flex flex-1 flex-col gap-5 p-4 md:p-6">
+      {/* ─── Sticky Section Nav ─── */}
+      <nav className="sticky top-0 z-10 -mx-4 -mt-4 md:-mx-6 md:-mt-6 mb-0 border-b border-border/40 bg-background/80 backdrop-blur-md">
+        <div className="flex items-center gap-1 overflow-x-auto px-4 py-2 md:px-6" style={{ scrollbarWidth: "none" }}>
+          {SECTION_NAV.map((sec) => (
+            <button
+              key={sec.id}
+              onClick={() => scrollToSection(sec.id)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeSection === sec.id
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              }`}
+            >
+              {sec.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-5">
+
+        {/* ─── Row 1: Quick Stats ─── */}
+            <motion.div id="overview" variants={fadeUp} className="grid gap-3 grid-cols-2 lg:grid-cols-4 scroll-mt-14">
               <StatCard
                 icon={IconCash}
                 iconBg="bg-emerald-500/10"
@@ -476,7 +555,7 @@ export default function PlannerPage() {
             </motion.div>
 
             {/* ─── Row 2: Income + Investments | Pie Chart + Investment Split ─── */}
-            <div className="grid gap-5 lg:grid-cols-2 items-stretch">
+            <div id="income-investments" className="grid gap-5 lg:grid-cols-2 items-stretch scroll-mt-14">
               {/* Left: Income + Investments */}
               <motion.div variants={fadeUpSmall} className="flex flex-col gap-4">
                 {/* Income */}
@@ -637,7 +716,7 @@ export default function PlannerPage() {
             </div>
 
             {/* ─── Row 3: Savings / Needs / Wants ─── */}
-            <motion.div variants={fadeUpSmall} className="grid gap-4 lg:grid-cols-3">
+            <motion.div id="allocation" variants={fadeUpSmall} className="grid gap-4 lg:grid-cols-3 scroll-mt-14">
               {/* Savings — expanded with goal allocation */}
               <div className="rounded-xl border border-border/60 bg-card p-4 lg:col-span-1">
                 <div className="flex items-center gap-2.5 mb-3">
@@ -649,7 +728,7 @@ export default function PlannerPage() {
                     <p className="text-[11px] text-muted-foreground leading-snug">Emergency fund, liquid cash</p>
                   </div>
                   {linked.budgetConfig?.savings != null && (
-                    <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">Budget: {linked.budgetConfig.savings}%</Badge>
+                    <Badge variant="outline" className="text-[11px] tabular-nums shrink-0">Budget: {linked.budgetConfig.savings}%</Badge>
                   )}
                 </div>
                 <div className="flex items-center gap-2 mb-3">
@@ -672,7 +751,7 @@ export default function PlannerPage() {
                           <IconTarget className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                           <span className="text-xs text-muted-foreground truncate flex-1 min-w-0">{goal.name}</span>
                           <div className="relative w-24 shrink-0">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">₹</span>
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">₹</span>
                             <Input
                               type="number"
                               value={alloc || ""}
@@ -760,7 +839,7 @@ export default function PlannerPage() {
 
             {/* ─── Row 5: What-If Simulator ─── */}
             {monthlyIncome > 0 && whatIfCategories.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="rounded-xl border border-border/60 bg-card p-5">
+              <motion.div id="what-if" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="rounded-xl border border-border/60 bg-card p-5 scroll-mt-14">
                 <div className="flex items-center gap-2.5 mb-5">
                   <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-violet-500/10">
                     <IconAdjustments className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -861,7 +940,7 @@ export default function PlannerPage() {
             )}
 
             {/* ─── Row 6: Plan vs Actual + Linked Goals ───*/}
-            <div className={`grid gap-5 ${planVsActual.length > 0 ? "lg:grid-cols-2" : ""}`}>
+            <div id="goals" className={`grid gap-5 scroll-mt-14 ${planVsActual.length > 0 ? "lg:grid-cols-2" : ""}`}>
               {/* Plan vs Actual */}
               {planVsActual.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="rounded-xl border border-border/60 bg-card p-4">
@@ -943,36 +1022,13 @@ export default function PlannerPage() {
               </motion.div>
             </div>
 
-            {/* ─── Row 7: AI Recommendations ─── */}
-            {linked.aiRecommendation && (
-              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="rounded-xl border border-border/60 bg-card p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-500/10">
-                      <IconSparkles className="h-4 w-4 text-purple-500" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-semibold">AI Recommendation</h2>
-                      <p className="text-[11px] text-muted-foreground">Based on your spending patterns</p>
-                    </div>
-                  </div>
-                  <Link href="/ai-insights" className="text-xs text-primary hover:underline flex items-center gap-1">
-                    Full insights <IconArrowRight className="h-3 w-3" />
-                  </Link>
-                </div>
-                <div className="rounded-lg bg-muted/30 p-3">
-                  <div className="text-sm text-muted-foreground leading-relaxed">
-                    <InsightMarkdown content={linked.aiRecommendation.content} />
-                  </div>
-                  <p className="text-[11px] text-muted-foreground/60 mt-2" suppressHydrationWarning>
-                    Generated {new Date(linked.aiRecommendation.generatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                  </p>
-                </div>
-              </motion.div>
-            )}
+            {/* ─── Row 7: AI Plan Analysis ─── */}
+            <div id="ai-analysis" className="scroll-mt-14">
+              <PlannerAiSection />
+            </div>
 
             {/* ─── Row 8: Tips + Portfolio Summary ─── */}
-            <div className={`grid gap-5 ${(linked.sips || linked.stocks) ? "lg:grid-cols-2" : ""}`}>
+            <div id="portfolio-tips" className={`grid gap-5 scroll-mt-14 ${(linked.sips || linked.stocks) ? "lg:grid-cols-2" : ""}`}>
               {/* Portfolio Summary */}
               {(linked.sips || linked.stocks) && (
                 <motion.div variants={fadeUpSmall} className="rounded-xl border border-border/60 bg-card p-4">
@@ -1033,10 +1089,8 @@ export default function PlannerPage() {
               </motion.div>
             </div>
 
-          </motion.div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </motion.div>
+    </div>
   )
 }
 
@@ -1079,7 +1133,7 @@ function AllocationCard({ icon: Icon, iconBg, iconColor, label, hint, value, onC
           <p className="text-[11px] text-muted-foreground leading-snug">{hint}</p>
         </div>
         {budgetPct != null && (
-          <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">Budget: {budgetPct}%</Badge>
+          <Badge variant="outline" className="text-[11px] tabular-nums shrink-0">Budget: {budgetPct}%</Badge>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -1106,7 +1160,310 @@ function ImpactCard({ label, value, isPositive, subtitle }: {
         isPositive === true ? "text-emerald-600 dark:text-emerald-400" :
         isPositive === false ? "text-rose-600" : ""
       }`}>{displayValue}</p>
-      {subtitle && <p className="text-[10px] text-muted-foreground">{subtitle}</p>}
+      {subtitle && <p className="text-[11px] text-muted-foreground">{subtitle}</p>}
+    </div>
+  )
+}
+
+// ─── AI Plan Analysis Section ───
+
+const PLAN_SEVERITY_STYLES: Record<string, { border: string; bg: string; text: string }> = {
+  positive: { border: "border-emerald-200/70 dark:border-emerald-800/50", bg: "bg-emerald-50/50 dark:bg-emerald-950/20", text: "text-emerald-600 dark:text-emerald-400" },
+  warning: { border: "border-amber-200/70 dark:border-amber-800/50", bg: "bg-amber-50/50 dark:bg-amber-950/20", text: "text-amber-600 dark:text-amber-400" },
+  critical: { border: "border-rose-200/70 dark:border-rose-800/50", bg: "bg-rose-50/50 dark:bg-rose-950/20", text: "text-rose-600 dark:text-rose-400" },
+}
+
+const PLAN_IMPACT_STYLES: Record<string, { dot: string; text: string }> = {
+  high: { dot: "bg-rose-500", text: "text-rose-600 dark:text-rose-400" },
+  medium: { dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+  low: { dot: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
+}
+
+const PLAN_STATUS_STYLES: Record<string, { label: string; color: string; bg: string }> = {
+  on_track: { label: "On track", color: "text-emerald-700 dark:text-emerald-300", bg: "bg-emerald-100 dark:bg-emerald-900/40" },
+  over: { label: "Over", color: "text-rose-700 dark:text-rose-300", bg: "bg-rose-100 dark:bg-rose-900/40" },
+  under: { label: "Under", color: "text-blue-700 dark:text-blue-300", bg: "bg-blue-100 dark:bg-blue-900/40" },
+}
+
+function PlanScoreRing({ score }: { score: number }) {
+  const radius = 42
+  const stroke = 6
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (score / 100) * circumference
+  const color = score >= 75 ? "text-emerald-500" : score >= 50 ? "text-amber-500" : "text-rose-500"
+
+  return (
+    <div className="relative shrink-0" style={{ width: 100, height: 100 }}>
+      <svg width="100" height="100" viewBox="0 0 100 100" className="-rotate-90">
+        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth={stroke} className="stroke-muted" />
+        <circle cx="50" cy="50" r={radius} fill="none" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} className={`${color} transition-all duration-1000 ease-out`} style={{ stroke: "currentColor" }} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className={`text-2xl font-bold tabular-nums ${color}`}>{score}</span>
+        <span className="text-[11px] text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+  )
+}
+
+function PlannerAiSection() {
+  const { structuredData, generatedAt, fromCache, stale, isLoading, isRegenerating, error, regenerate } = useAiInsight("planner_recommendation")
+  const data = structuredData as PlannerRecommendationData | null
+  const isWorking = isLoading || isRegenerating
+
+  // Header — always shown
+  const header = (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-500/10 dark:bg-purple-500/15">
+          <IconSparkles className="h-[18px] w-[18px] text-purple-600 dark:text-purple-400" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold leading-tight">AI Plan Analysis</h3>
+          <p className="text-xs text-muted-foreground leading-snug">AI-powered assessment of your financial plan</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {fromCache && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Cached</span>
+        )}
+        {stale && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">
+            <IconAlertTriangle className="h-3 w-3" /> Stale
+          </span>
+        )}
+        <Button variant="ghost" size="sm" onClick={() => regenerate()} disabled={isWorking} className="h-8 shrink-0 gap-1 px-2.5 text-xs">
+          {isWorking ? <IconRefresh className="h-3.5 w-3.5 animate-spin" /> : <IconSparkles className="h-3.5 w-3.5" />}
+          <span>{isWorking ? "Generating..." : "Regenerate"}</span>
+        </Button>
+      </div>
+    </div>
+  )
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {header}
+        <div className="rounded-xl border bg-card p-5">
+          <div className="flex items-center gap-5">
+            <Skeleton className="h-[100px] w-[100px] rounded-full shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-2/5" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          <Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" />
+        </div>
+        <Skeleton className="h-32 rounded-xl" />
+      </div>
+    )
+  }
+
+  // Error state
+  if (error && !data) {
+    return (
+      <div className="space-y-4">
+        {header}
+        <div className="rounded-xl border border-rose-200/80 bg-rose-50/50 p-4 dark:border-rose-900/50 dark:bg-rose-950/30">
+          <div className="flex items-start gap-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 dark:bg-rose-900/50">
+              <IconAlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{error}</p>
+              <Button variant="outline" size="sm" onClick={() => regenerate()} className="h-7 gap-1 text-xs">
+                <IconRefresh className="h-3.5 w-3.5" /> Retry
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // No data — prompt to generate
+  if (!data) {
+    return (
+      <div className="space-y-4">
+        {header}
+        <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-10 text-center">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/10">
+            <IconSparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+          </div>
+          <p className="text-sm font-medium">No plan analysis yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">Click Regenerate to get AI insights on your financial plan</p>
+        </div>
+      </div>
+    )
+  }
+
+  const severity = PLAN_SEVERITY_STYLES[data.allocationReview.severity] || PLAN_SEVERITY_STYLES.positive
+
+  const allocBuckets = [
+    { label: "Needs", pct: data.allocationReview.needsPct, target: 50, color: "bg-blue-500", trackColor: "bg-blue-100 dark:bg-blue-900/30", textColor: "text-blue-600 dark:text-blue-400" },
+    { label: "Wants", pct: data.allocationReview.wantsPct, target: 30, color: "bg-amber-500", trackColor: "bg-amber-100 dark:bg-amber-900/30", textColor: "text-amber-600 dark:text-amber-400" },
+    { label: "Investments", pct: data.allocationReview.investmentsPct, target: 12, color: "bg-indigo-500", trackColor: "bg-indigo-100 dark:bg-indigo-900/30", textColor: "text-indigo-600 dark:text-indigo-400" },
+    { label: "Savings", pct: data.allocationReview.savingsPct, target: 8, color: "bg-emerald-500", trackColor: "bg-emerald-100 dark:bg-emerald-900/30", textColor: "text-emerald-600 dark:text-emerald-400" },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {header}
+
+      {isRegenerating && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+          <IconRefresh className="h-3.5 w-3.5 animate-spin text-primary" />
+          <span className="text-xs font-medium text-primary">Regenerating with latest data...</span>
+        </div>
+      )}
+
+      {/* 1. Score Ring + Summary */}
+      <div className="rounded-xl border bg-card p-5">
+        <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+          <PlanScoreRing score={data.planScore} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm leading-relaxed">{data.summary}</p>
+            {generatedAt && (
+              <p className="mt-2 text-[11px] text-muted-foreground/60" suppressHydrationWarning>
+                Analyzed {new Date(generatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Allocation Breakdown */}
+      <div className={`rounded-xl border ${severity.border} ${severity.bg} p-5`}>
+        <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Allocation Breakdown</h4>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {allocBuckets.map((b) => (
+            <div key={b.label}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium">{b.label}</span>
+                <span className={`text-xs font-medium ${b.textColor}`}>{b.pct.toFixed(0)}%</span>
+              </div>
+              <div className={`mt-1.5 h-2 w-full overflow-hidden rounded-full ${b.trackColor}`}>
+                <div className={`h-full rounded-full ${b.color} transition-all duration-700`} style={{ width: `${Math.min((b.pct / Math.max(b.target, 1)) * 100, 100)}%` }} />
+              </div>
+              <p className="mt-1 text-right text-[11px] text-muted-foreground tabular-nums">target ~{b.target}%</p>
+            </div>
+          ))}
+        </div>
+        <p className={`mt-3 text-xs ${severity.text}`}>{data.allocationReview.verdict}</p>
+      </div>
+
+      {/* 3. Plan vs Actual */}
+      {data.planVsActual.length > 0 && (
+        <div className="rounded-xl border bg-card p-5">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plan vs Actual</h4>
+          <div className="space-y-3">
+            {data.planVsActual.map((item) => {
+              const statusStyle = PLAN_STATUS_STYLES[item.status] || PLAN_STATUS_STYLES.on_track
+              const barPct = item.planned > 0 ? (item.actual / item.planned) * 100 : 0
+              const barColor = item.status === "over" ? "bg-rose-500" : item.status === "under" ? "bg-blue-500" : "bg-emerald-500"
+              return (
+                <div key={item.category}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{item.category}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatINR(item.actual)} / {formatINR(item.planned)}
+                      </span>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusStyle.color} ${statusStyle.bg}`}>
+                        {statusStyle.label}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
+                    <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${Math.min(barPct, 100)}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Goal Feasibility */}
+      {data.goalFeasibility.length > 0 && (
+        <div className="rounded-xl border bg-card p-5">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Goal Feasibility</h4>
+          <div className="space-y-3">
+            {data.goalFeasibility.map((goal) => {
+              const pctDone = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0
+              return (
+                <div key={goal.goalName} className="rounded-lg border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${goal.feasible ? "bg-emerald-100 dark:bg-emerald-900/40" : "bg-amber-100 dark:bg-amber-900/40"}`}>
+                        {goal.feasible
+                          ? <IconCircleCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                          : <IconAlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                        }
+                      </div>
+                      <span className="text-sm font-semibold truncate">{goal.goalName}</span>
+                    </div>
+                    <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${goal.feasible ? "text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40" : "text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40"}`}>
+                      {goal.feasible ? "On track" : "At risk"}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
+                    <div className={`h-full rounded-full transition-all duration-700 ${goal.feasible ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${Math.min(pctDone, 100)}%` }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="tabular-nums">{formatINR(goal.currentAmount)} of {formatINR(goal.targetAmount)}</span>
+                    <span className="tabular-nums">
+                      {goal.monthlySaving > 0 ? `${formatINR(goal.monthlySaving)}/mo \u2022 ${goal.monthsToGoal} mo left` : "No monthly saving"}
+                    </span>
+                  </div>
+                  <p className={`mt-1.5 text-xs ${goal.feasible ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                    {goal.suggestion}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Recommendations */}
+      {data.recommendations.length > 0 && (
+        <div>
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommendations</h4>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {data.recommendations.map((rec, i) => {
+              const impact = PLAN_IMPACT_STYLES[rec.impact] || PLAN_IMPACT_STYLES.low
+              return (
+                <div key={i} className="relative rounded-xl border bg-card p-4">
+                  <div className="absolute right-3 top-3 flex items-center gap-1">
+                    <span className={`h-1.5 w-1.5 rounded-full ${impact.dot}`} />
+                    <span className={`text-[11px] font-medium ${impact.text}`}>{rec.impact}</span>
+                  </div>
+                  <p className="pr-16 text-sm font-semibold">{rec.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{rec.description}</p>
+                  <span className="mt-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{rec.category}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Key Takeaway Callout */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-start gap-3">
+          <IconSparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Key Takeaway</p>
+            <p className="mt-1 text-sm leading-relaxed">{data.keyTakeaway}</p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

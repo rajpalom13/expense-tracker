@@ -66,6 +66,132 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+// ─── Popular Services (logo.dev domains + defaults) ───
+
+const POPULAR_SERVICES = [
+  { name: "Netflix", domain: "netflix.com", amount: 649, frequency: "monthly" as const, category: "Entertainment", color: "#E50914" },
+  { name: "Spotify", domain: "spotify.com", amount: 119, frequency: "monthly" as const, category: "Entertainment", color: "#1DB954" },
+  { name: "Apple Music", domain: "music.apple.com", amount: 99, frequency: "monthly" as const, category: "Entertainment", color: "#FA243C" },
+  { name: "iCloud+", domain: "icloud.com", amount: 75, frequency: "monthly" as const, category: "Subscription", color: "#3693F3" },
+  { name: "Google One", domain: "one.google.com", amount: 130, frequency: "monthly" as const, category: "Subscription", color: "#4285F4" },
+  { name: "Amazon Prime", domain: "primevideo.com", amount: 1499, frequency: "yearly" as const, category: "Entertainment", color: "#00A8E1" },
+  { name: "YouTube Premium", domain: "youtube.com", amount: 149, frequency: "monthly" as const, category: "Entertainment", color: "#FF0000" },
+  { name: "Disney+ Hotstar", domain: "hotstar.com", amount: 299, frequency: "monthly" as const, category: "Entertainment", color: "#1A3068" },
+  { name: "JioCinema", domain: "jiocinema.com", amount: 89, frequency: "monthly" as const, category: "Entertainment", color: "#E72E78" },
+  { name: "Notion", domain: "notion.so", amount: 800, frequency: "monthly" as const, category: "Subscription", color: "#000000" },
+  { name: "ChatGPT Plus", domain: "chatgpt.com", amount: 1700, frequency: "monthly" as const, category: "Subscription", color: "#74AA9C" },
+  { name: "Claude Pro", domain: "claude.ai", amount: 1700, frequency: "monthly" as const, category: "Subscription", color: "#D4A574" },
+  { name: "Adobe Creative Cloud", domain: "adobe.com", amount: 1675, frequency: "monthly" as const, category: "Subscription", color: "#FF0000" },
+  { name: "Google Drive", domain: "drive.google.com", amount: 130, frequency: "monthly" as const, category: "Subscription", color: "#4285F4" },
+  { name: "Microsoft 365", domain: "microsoft.com", amount: 489, frequency: "monthly" as const, category: "Subscription", color: "#0078D4" },
+  { name: "Figma", domain: "figma.com", amount: 1050, frequency: "monthly" as const, category: "Subscription", color: "#F24E1E" },
+  { name: "GitHub Pro", domain: "github.com", amount: 340, frequency: "monthly" as const, category: "Subscription", color: "#24292F" },
+  { name: "LinkedIn Premium", domain: "linkedin.com", amount: 1500, frequency: "monthly" as const, category: "Subscription", color: "#0A66C2" },
+]
+
+// Build a lookup: lowercase name -> service info
+const SERVICE_LOOKUP = new Map(
+  POPULAR_SERVICES.map((s) => [s.name.toLowerCase(), s])
+)
+
+// Also build partial match aliases
+const SERVICE_ALIASES: Record<string, string> = {
+  netflix: "netflix.com",
+  spotify: "spotify.com",
+  "apple music": "music.apple.com",
+  icloud: "icloud.com",
+  "icloud+": "icloud.com",
+  "google one": "one.google.com",
+  "google drive": "drive.google.com",
+  "amazon prime": "primevideo.com",
+  prime: "primevideo.com",
+  "prime video": "primevideo.com",
+  youtube: "youtube.com",
+  "youtube premium": "youtube.com",
+  "disney+": "hotstar.com",
+  "disney+ hotstar": "hotstar.com",
+  hotstar: "hotstar.com",
+  jiocinema: "jiocinema.com",
+  notion: "notion.so",
+  chatgpt: "chatgpt.com",
+  "chatgpt plus": "chatgpt.com",
+  openai: "chatgpt.com",
+  claude: "claude.ai",
+  "claude pro": "claude.ai",
+  anthropic: "claude.ai",
+  adobe: "adobe.com",
+  "creative cloud": "adobe.com",
+  microsoft: "microsoft.com",
+  "microsoft 365": "microsoft.com",
+  office: "microsoft.com",
+  figma: "figma.com",
+  github: "github.com",
+  linkedin: "linkedin.com",
+}
+
+function getServiceDomain(name: string): string | null {
+  const lower = name.toLowerCase().trim()
+  // Exact match
+  const service = SERVICE_LOOKUP.get(lower)
+  if (service) return service.domain
+  // Alias match
+  if (SERVICE_ALIASES[lower]) return SERVICE_ALIASES[lower]
+  // Partial match
+  for (const [alias, domain] of Object.entries(SERVICE_ALIASES)) {
+    if (lower.includes(alias) || alias.includes(lower)) return domain
+  }
+  return null
+}
+
+function getServiceColor(name: string): string {
+  const lower = name.toLowerCase().trim()
+  const service = SERVICE_LOOKUP.get(lower)
+  if (service) return service.color
+  // Hash-based color for unknown services
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  const hue = Math.abs(hash % 360)
+  return `oklch(0.55 0.12 ${hue})`
+}
+
+const LOGO_DEV_TOKEN = process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN || "pk_ajceTXQWTCGDlDmPsAhitg"
+
+function getLogoUrl(domain: string, size: number): string {
+  return `https://img.logo.dev/${domain}?token=${LOGO_DEV_TOKEN}&size=${size}&format=png`
+}
+
+function ServiceLogo({ name, size = 32 }: { name: string; size?: number }) {
+  const [imgError, setImgError] = useState(false)
+  const domain = getServiceDomain(name)
+
+  if (!domain || imgError) {
+    // Fallback: colored initial letter
+    const color = getServiceColor(name)
+    const initial = name.charAt(0).toUpperCase()
+    return (
+      <div
+        className="flex shrink-0 items-center justify-center rounded-lg text-white font-bold"
+        style={{ width: size, height: size, backgroundColor: color, fontSize: size * 0.4 }}
+      >
+        {initial}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={getLogoUrl(domain, size * 2)}
+      alt={`${name} logo`}
+      width={size}
+      height={size}
+      className="shrink-0 rounded-lg object-contain"
+      style={{ width: size, height: size }}
+      onError={() => setImgError(true)}
+      loading="lazy"
+    />
+  )
+}
+
 // ─── Types ───
 
 interface Subscription {
@@ -479,11 +605,12 @@ export default function SubscriptionsPage() {
                               key={sub._id}
                               className="flex items-center gap-2 rounded-lg border border-amber-200/60 dark:border-amber-800/30 bg-background/80 px-3 py-2"
                             >
+                              <ServiceLogo name={sub.name} size={20} />
                               <span className="text-sm font-medium">{sub.name}</span>
                               <span className="text-xs text-muted-foreground tabular-nums">
                                 {formatINR(sub.amount)}
                               </span>
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
+                              <Badge variant="outline" className="text-[11px] px-1.5 py-0 h-4 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
                                 {days === 0 ? "Today" : days === 1 ? "Tomorrow" : `${days}d`}
                               </Badge>
                             </div>
@@ -524,7 +651,7 @@ export default function SubscriptionsPage() {
                           <TabsTrigger value="active" className="text-xs gap-1.5">
                             Active
                             {activeSubs.length > 0 && (
-                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[11px]">
                                 {activeSubs.length}
                               </Badge>
                             )}
@@ -532,7 +659,7 @@ export default function SubscriptionsPage() {
                           <TabsTrigger value="paused" className="text-xs gap-1.5">
                             Paused
                             {pausedSubs.length > 0 && (
-                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[11px]">
                                 {pausedSubs.length}
                               </Badge>
                             )}
@@ -540,7 +667,7 @@ export default function SubscriptionsPage() {
                           <TabsTrigger value="cancelled" className="text-xs gap-1.5">
                             Cancelled
                             {cancelledSubs.length > 0 && (
-                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px]">
+                              <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[11px]">
                                 {cancelledSubs.length}
                               </Badge>
                             )}
@@ -622,7 +749,7 @@ export default function SubscriptionsPage() {
                               <div key={cat} className="space-y-1">
                                 <div className="flex items-center justify-between text-sm">
                                   <div className="flex items-center gap-2">
-                                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 border-0 ${getCategoryBadgeClass(cat)}`}>
+                                    <Badge variant="outline" className={`text-[11px] px-1.5 py-0 h-4 border-0 ${getCategoryBadgeClass(cat)}`}>
                                       {cat}
                                     </Badge>
                                     <span className="text-xs text-muted-foreground">{count} sub{count > 1 ? "s" : ""}</span>
@@ -724,17 +851,60 @@ interface SubscriptionFormProps {
 }
 
 function SubscriptionForm({ form, setForm }: SubscriptionFormProps) {
+  const handleQuickSelect = (service: (typeof POPULAR_SERVICES)[number]) => {
+    setForm((prev) => ({
+      ...prev,
+      name: service.name,
+      amount: service.amount.toString(),
+      frequency: service.frequency,
+      category: service.category,
+    }))
+  }
+
   return (
     <div className="space-y-4 py-2">
+      {/* Quick-select popular services */}
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">Quick Add</Label>
+        <Select
+          value=""
+          onValueChange={(val) => {
+            const svc = POPULAR_SERVICES.find((s) => s.name === val)
+            if (svc) handleQuickSelect(svc)
+          }}
+        >
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="Choose a popular service..." />
+          </SelectTrigger>
+          <SelectContent>
+            {POPULAR_SERVICES.map((svc) => (
+              <SelectItem key={svc.name} value={svc.name}>
+                <span className="flex items-center gap-2">
+                  <ServiceLogo name={svc.name} size={18} />
+                  <span>{svc.name}</span>
+                  <span className="text-muted-foreground ml-auto">{formatINR(svc.amount)}/{svc.frequency === "yearly" ? "yr" : "mo"}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Separator />
+
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-2">
           <Label htmlFor="sub-name">Name</Label>
-          <Input
-            id="sub-name"
-            placeholder="e.g. Netflix, Spotify"
-            value={form.name}
-            onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-          />
+          <div className="flex gap-2 items-center">
+            {form.name && <ServiceLogo name={form.name} size={28} />}
+            <Input
+              id="sub-name"
+              placeholder="e.g. Netflix, Spotify"
+              value={form.name}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              className="flex-1"
+            />
+          </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="sub-amount">Amount (INR)</Label>
@@ -868,13 +1038,11 @@ function SubscriptionTable({
               >
                 <TableCell>
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <IconCreditCard className="h-4 w-4" />
-                    </div>
+                    <ServiceLogo name={sub.name} size={32} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{sub.name}</p>
                       {sub.notes && (
-                        <p className="text-[10px] text-muted-foreground truncate max-w-[180px]">{sub.notes}</p>
+                        <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">{sub.notes}</p>
                       )}
                     </div>
                   </div>
@@ -883,13 +1051,13 @@ function SubscriptionTable({
                   <div className="text-sm font-semibold tabular-nums">
                     {formatINR(sub.amount)}
                   </div>
-                  <span className="text-[10px] text-muted-foreground">{frequencyLabel(sub.frequency)}</span>
+                  <span className="text-[11px] text-muted-foreground">{frequencyLabel(sub.frequency)}</span>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
                   <span className="text-xs text-muted-foreground capitalize">{sub.frequency}</span>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 border-0 ${getCategoryBadgeClass(sub.category)}`}>
+                  <Badge variant="outline" className={`text-[11px] px-1.5 py-0 h-4 border-0 ${getCategoryBadgeClass(sub.category)}`}>
                     {sub.category}
                   </Badge>
                 </TableCell>
@@ -904,10 +1072,10 @@ function SubscriptionTable({
                       {formatDate(sub.nextExpected)}
                     </span>
                     {isOverdue && (
-                      <Badge variant="destructive" className="text-[10px] px-1 py-0 h-4">Overdue</Badge>
+                      <Badge variant="destructive" className="text-[11px] px-1 py-0 h-4">Overdue</Badge>
                     )}
                     {isUpcoming && !isOverdue && (
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400">
+                      <Badge variant="outline" className="text-[11px] px-1 py-0 h-4 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400">
                         {days === 0 ? "Today" : days === 1 ? "1d" : `${days}d`}
                       </Badge>
                     )}

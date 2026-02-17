@@ -3,7 +3,7 @@ import { corsHeaders, handleOptions, withAuth } from '@/lib/middleware';
 import { runAiPipeline, getCachedAnalysis } from '@/lib/ai-pipeline';
 import type { AiInsightType } from '@/lib/ai-types';
 
-const VALID_TYPES: AiInsightType[] = ['spending_analysis', 'monthly_budget', 'weekly_budget', 'investment_insights', 'tax_optimization'];
+const VALID_TYPES: AiInsightType[] = ['spending_analysis', 'monthly_budget', 'weekly_budget', 'investment_insights', 'tax_optimization', 'planner_recommendation'];
 
 function isValidType(type: unknown): type is AiInsightType {
   return typeof type === 'string' && VALID_TYPES.includes(type as AiInsightType);
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
           success: true,
           content: result.content,
           sections: result.sections || null,
+          structuredData: result.structuredData || null,
           generatedAt: result.generatedAt,
           dataPoints: result.dataPoints,
           fromCache: result.fromCache,
@@ -53,6 +54,8 @@ export async function GET(request: NextRequest) {
           {
             success: true,
             content: cached.content,
+            sections: cached.sections || null,
+            structuredData: cached.structuredData || null,
             generatedAt: cached.generatedAt,
             dataPoints: cached.dataPoints,
             fromCache: true,
@@ -104,6 +107,8 @@ export async function POST(request: NextRequest) {
         {
           success: true,
           content: result.content,
+          sections: result.sections || null,
+          structuredData: result.structuredData || null,
           generatedAt: result.generatedAt,
           dataPoints: result.dataPoints,
           fromCache: false,
